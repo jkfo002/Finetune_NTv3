@@ -23,33 +23,7 @@ import pyfaidx
 
 from model.head import HFModelWithHead
 from model.backbone import MyDataModule_NTv3, MyModel
-from model.utils import load_Data
-
-def load_config(config_path: str) -> Dict:
-    with open(config_path, "r") as f:
-        config = toml.load(f)
-    return config
-
-def init_config(config: Dict) -> Dict:
-    # Set random seed
-    seed_everything(config["seed"], workers=True)
-    # device
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    config["device"] = device
-
-    return config
-
-def init_model(config: Dict) -> Tuple[nn.Module, AutoTokenizer]:
-    # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(config["model_name"], trust_remote_code=True)
-    # Create model
-    model = HFModelWithHead(
-        model_name=config["model_name"],
-        num_tracks=config["num_tracks"],
-        keep_target_center_fraction=config["keep_target_center_fraction"],
-    )
-
-    return model, tokenizer
+from model.utils import load_config, init_config, init_model, load_ckpt_with_compile
 
 def set_callbacks(config: Dict) -> Tuple[LearningRateMonitor, ModelCheckpoint]:
     lr_monitor = LearningRateMonitor(logging_interval='step')
@@ -68,7 +42,7 @@ def main():
     config = load_config("config/fineturn_my.toml")
     config = init_config(config)
 
-    model, tokenizer = init_model(config) # init model and tokenizer
+    model, tokenizer = init_model(config, HFModelWithHead) # init model and tokenizer
 
     # data path
     faidx = pyfaidx.Fasta(config["fasta_path"])

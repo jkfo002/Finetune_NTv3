@@ -1,10 +1,39 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, List, Callable, Optional, Union
+from transformers import AutoTokenizer
+from typing import Dict, List, Callable, Optional, Union, Tuple
 import numpy as np
 import pandas as pd
 import tqdm
+import toml
+from pytorch_lightning import seed_everything
+
+def load_config(config_path: str) -> Dict:
+    with open(config_path, "r") as f:
+        config = toml.load(f)
+    return config
+
+def init_config(config: Dict) -> Dict:
+    # Set random seed
+    seed_everything(config["seed"], workers=True)
+    # device
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    config["device"] = device
+
+    return config
+
+def init_model(config: Dict, model_cls) -> Tuple[nn.Module, AutoTokenizer]:
+    # Load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(config["model_name"], trust_remote_code=True)
+    # Create model
+    init_model = model_cls(
+        model_name=config["model_name"],
+        num_tracks=config["num_tracks"],
+        keep_target_center_fraction=config["keep_target_center_fraction"],
+    )
+
+    return init_model, tokenizer
 
 def gene_filter(gene_df, faidx, TSS_region_len_up, TSS_region_len_down):
     """
@@ -111,3 +140,47 @@ def transform_fn(x: torch.Tensor) -> torch.Tensor:
 #     )
 #     return clipped
 
+def load_ckpt_with_compile(
+    my_models: nn.Module, 
+    ckpt_path: str, 
+    device: str = "cuda", 
+    prefix_in_lightning: str = "mymodel.",
+    compile: bool = False,
+    strict: bool = True,
+):
+    """Load checkpoint.
+
+    Args:
+        my_models (pl.LightningModule): pl.LightningModule to load checkpoint.
+        ckpt_path (str): Checkpoint path.
+        device (str, optional): Device to load checkpoint. Defaults to "cuda".
+        prefix_in_lightning (str, optional): Prefix in Lightning checkpoint. Defaults to "mymodel.".
+        compile (bool, optional): Whether to compile model. Defaults to False.
+        strict (bool, optional): Whether to strictly load state_dict (for RoPE cache, False). Defaults to True.
+
+    Return:
+        my_models: Loaded model for eval
+    """
+    checkpoint = torch.load(ckpt_path, map_location=device)  # 或 "cuda" if GPU
+
+    # 2. 提取 state_dict（注意：Lightning 保存的 key 带有 "model." 前缀）
+    state_dict = checkpoint["state_dict"]
+
+    from collections import OrderedDict
+    new_state_dict = OrderedDict()
+    for k, v in state_dict.items():
+        if k.startswith(prefix_in_lightning):
+            new_k = k[len(prefix_in_lightning):]  # 去掉 "model." 前缀
+            if compile: 
+                if "_orig_mod." in new_k: # 模型训练过程中使用torch.compile会在ckpt的权重文件中增加_orig_mod 需要去掉 否则无法加载
+                    new_k = new_k.replace("_orig_mod.", "")
+                
+            new_state_dict[new_k] = v
+        else:
+            # 可能还有其他非 model 的参数（如 loss_fn 等），跳过
+            continue
+
+    # 4. 加载到 my_models（纯 nn.Module）
+    my_models.load_state_dict(new_state_dict, strict=strict)
+
+    return my_models
