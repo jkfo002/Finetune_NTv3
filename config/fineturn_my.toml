@@ -1,0 +1,45 @@
+# Model configuration for NTv3 pretraining
+model_name = "/root/peaks2/NTv3/weight/NTV3_100M_pre"
+
+# data
+fasta_path = "/vepfs-C/vepfs_public/daijc/lncRNA/training_data/A157.fa"
+TSS_up = 12800
+TSS_down = 12800
+sequence_length = 25600
+keep_target_center_fraction = 0.75
+num_tracks = 54
+training_data_dir = "/vepfs-C/vepfs_public/daijc/lncRNA/training_data"
+gene_bed = "merged_combined_sorted.bed"
+bigwig_files = [
+    "C3-1_sort.h5", "C3-2_sort.h5", "C3-3_sort.h5", "C6-1_sort.h5", "C6-2_sort.h5", "C6-3_sort.h5", 
+    "C12-1_sort.h5", "C12-2_sort.h5", "C12-3_sort.h5", "C24-1_sort.h5", "C24-2_sort.h5", "C24-3_sort.h5", 
+    "C36-1_sort.h5", "C36-2_sort.h5", "C36-3_sort.h5", "C48-1_sort.h5", "C48-2_sort.h5", "C48-3_sort.h5", 
+    "T3-1_sort.h5", "T3-2_sort.h5", "T3-3_sort.h5", "T6-1_sort.h5", "T6-2_sort.h5", "T6-3_sort.h5", 
+    "T12-1_sort.h5", "T12-2_sort.h5", "T12-3_sort.h5", "T24-1_sort.h5", "T24-2_sort.h5", "T24-3_sort.h5", 
+    "T36-1_sort.h5", "T36-2_sort.h5", "T36-3_sort.h5", "T48-1_sort.h5", "T48-2_sort.h5", "T48-3_sort.h5", 
+    "flower-1_sort.h5", "flower-2_sort.h5", "flower-3_sort.h5", "fruit-1_sort.h5", "fruit-2_sort.h5", "fruit-3_sort.h5", 
+    "leaf-1_sort.h5", "leaf-2_sort.h5", "leaf-3_sort.h5", "root-1_sort.h5", "root-2_sort.h5", "root-3_sort.h5", 
+    "stem-1_sort.h5", "stem-2_sort.h5", "stem-3_sort.h5", "tuber-1_sort.h5", "tuber-2_sort.h5", "tuber-3_sort.h5"
+]
+
+# training
+## learning_rate
+learning_rate = 5e-6
+weight_decay = 0.001
+## training set
+freeze_backbone = false
+batch_size = 16
+max_steps = 50000
+log_every_n_steps = 50
+check_val_every_n_epoch = 1
+
+# Genral
+seed = 42
+num_workers = 4
+num_devices = 1
+device = "cuda"
+
+# Saving
+log_dir="/vepfs-C/vepfs_public/daijc/lncRNA/log"
+checkpoints = "/vepfs-C/vepfs_public/daijc/lncRNA/checkpoints"
+logger_prefix="NTv3-pre-100M_fineturn_12.8k_k0.75"

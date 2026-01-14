@@ -1,0 +1,8 @@
+err.log
+test.py
+
+data/
+weight/
+**/__pycache__/
+
+run.sh

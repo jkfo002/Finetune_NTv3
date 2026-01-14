@@ -1,0 +1,50 @@
+# Model configuration for NTv3 pretraining
+model_name = "/root/peaks2/NTv3/weight/NTV3_100M_pre"
+
+# data
+fasta_path = "/vepfs-C/vepfs_public/daijc/lncRNA/training_data/A157.fa"
+sequence_length = 6000
+keep_target_center_fraction = 0.375
+num_tracks = 54
+training_data_dir = "/vepfs-C/vepfs_public/daijc/lncRNA/training_data"
+train_chrom_regions = [
+    "A157_chr01.chunk_000.parquet", "A157_chr01.chunk_001.parquet","A157_chr01.chunk_002.parquet",
+    "A157_chr02.chunk_000.parquet", "A157_chr02.chunk_001.parquet","A157_chr02.chunk_002.parquet",
+    "A157_chr03.chunk_000.parquet", "A157_chr03.chunk_002.parquet",
+    "A157_chr04.chunk_001.parquet",
+    "A157_chr05.chunk_000.parquet", "A157_chr05.chunk_001.parquet",
+    "A157_chr06.chunk_000.parquet", "A157_chr06.chunk_001.parquet",
+    "A157_chr07.chunk_000.parquet", "A157_chr07.chunk_001.parquet",
+    "A157_chr08.chunk_000.parquet", "A157_chr08.chunk_001.parquet",
+    "A157_chr09.chunk_000.parquet", "A157_chr09.chunk_001.parquet", 
+    "A157_chr10.chunk_000.parquet", "A157_chr10.chunk_001.parquet",
+    "A157_chr12.chunk_000.parquet"
+]
+valid_chrom_regions = [
+    "A157_chr03.chunk_001.parquet", "A157_chr04.chunk_000.parquet"
+]
+test_chrom_regions = [
+    
+]
+
+# training
+## learning_rate
+learning_rate = 1e-5
+weight_decay = 0.01
+## training set
+freeze_backbone = false
+batch_size = 32
+max_steps = 100000
+log_every_n_steps = 50
+check_val_every_n_epoch = 1
+
+# Genral
+seed = 42
+num_workers = 2
+num_devices = 1
+device = "cuda"
+
+# Saving
+log_dir="/vepfs-C/vepfs_public/daijc/lncRNA/log"
+checkpoints = "/vepfs-C/vepfs_public/daijc/lncRNA/checkpoints"
+logger_prefix="NTv3-pre-100M_fineturn"
