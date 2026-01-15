@@ -3,6 +3,7 @@ test.py
 
 data/
 weight/
+visualization/
 **/__pycache__/
 
 run.sh

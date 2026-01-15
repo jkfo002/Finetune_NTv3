@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import Dataset
 import numpy as np
+import matplotlib.pyplot as plt
 
 def visualization_channels(targets, preds, save_path=None, channels=None):
     """
@@ -59,7 +60,9 @@ def visualization_channels(targets, preds, save_path=None, channels=None):
         plt.show()
     plt.close()
 
-def visualization_channels_means(targets:torch.Tensor, preds:torch.Tensor, mean_order:dict, save_path=None, channels=None, ):
+def visualization_channels_means(
+    targets:np.ndarray, preds:np.ndarray, mean_order:dict, save_path=None, channels=None
+):
     """
     means the replication within both target and pred channels
     targets: (1, len, channels)
@@ -68,16 +71,18 @@ def visualization_channels_means(targets:torch.Tensor, preds:torch.Tensor, mean_
     assert targets.shape == preds.shape, "targets and preds must have the same shape"
     assert targets.shape[0] == 1, "targets and preds must have batch size of 1"
     assert preds.shape[0] == 1, "targets and preds must have batch size of 1"
-    _, seq_len, num_all_channels = target.shape
+    _, seq_len, num_all_channels = targets.shape
 
-    mean_channels = mean_order.keys()
-    mean_target = np.zeros((1, seq_len, num_all_channels))
-    mean_pred = np.zeros((1, seq_len, num_all_channels))
+    mean_channels = list(mean_order.keys())
+    mean_target = np.zeros((1, seq_len, len(mean_channels)))
+    mean_pred = np.zeros((1, seq_len, len(mean_channels)))
 
-    for m in range(len(mean_channels)):
-        mc = mean_channels[m]
-        mean_target[:, :, m] = targets[:, :, mean_order[mc]].mean(dim=-1, keepdim=True)
-        mean_pred[:, :, m] = preds[:, :, mean_order[mc]].mean(dim=-1, keepdim=True)
+    for i in range(len(mean_channels)):
+
+        mc = mean_channels[i]
+        select_channel = mean_order[mc]
+        mean_target[:, :, i] = targets[:, :, select_channel].mean(axis=-1)
+        mean_pred[:, :, i] = preds[:, :, select_channel].mean(axis=-1)
 
     visualization_channels(mean_target, mean_pred, save_path, channels)
 
