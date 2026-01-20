@@ -23,7 +23,7 @@ import pyfaidx
 
 from model.head import HFModelWithHead
 from model.backbone import MyDataModule_NTv3, MyModel
-from model.utils import load_config, init_config, init_model, load_ckpt_with_compile
+from model.utils import load_config, init_config, init_model, load_ckpt_with_compile, load_Data
 
 def set_callbacks(config: Dict) -> Tuple[LearningRateMonitor, ModelCheckpoint]:
     lr_monitor = LearningRateMonitor(logging_interval='step')

@@ -156,6 +156,8 @@ class HFModelWithHead_Saliency(nn.Module):
         outputs = self.backbone(
             input_ids=None,
             inputs_embeds=input_embeds,
+            output_hidden_states=True,
+            output_attentions=True,
             return_dict=True,
         )
         if return_logits_direct:
@@ -258,7 +260,7 @@ class SaliencyComputer:
         ).unsqueeze(0)
 
         # Forward pass with inputs_embeds (NOT input_ids - model requires exactly one)
-        outputs = self.model(inputs_embeds=inputs_embeds)
+        outputs = self.model(input_embeds=inputs_embeds)
 
         # Access bigwig logits using attribute-style access
         logits = outputs['bigwig_tracks_logits']

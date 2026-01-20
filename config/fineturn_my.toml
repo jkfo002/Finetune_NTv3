@@ -9,7 +9,7 @@ sequence_length = 25600
 keep_target_center_fraction = 0.75
 num_tracks = 54
 training_data_dir = "/vepfs-C/vepfs_public/daijc/lncRNA/training_data"
-gene_bed = "merged_combined_sorted.bed"
+gene_bed = "merged_combined_sorted_mRNA.bed"
 bigwig_files = [
     "C3-1_sort.h5", "C3-2_sort.h5", "C3-3_sort.h5", "C6-1_sort.h5", "C6-2_sort.h5", "C6-3_sort.h5", 
     "C12-1_sort.h5", "C12-2_sort.h5", "C12-3_sort.h5", "C24-1_sort.h5", "C24-2_sort.h5", "C24-3_sort.h5", 

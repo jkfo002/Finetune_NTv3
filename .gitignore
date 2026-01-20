@@ -3,6 +3,7 @@ test.py
 
 data/
 weight/
+report/
 visualization/
 **/__pycache__/
 

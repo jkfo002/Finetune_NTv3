@@ -41,7 +41,7 @@ saliency_computer = SaliencyComputer(
     tokenizer=tokenizer,
     sequence_length=config["sequence_length"],
     track_indices=None,
-    region=(10800, 14800),
+    region=None,
     device=device
 )
 
@@ -50,47 +50,41 @@ faidx = pyfaidx.Fasta(config["fasta_path"])
 gene_bed = os.path.join(config["training_data_dir"], config["gene_bed"])
 gene_bed = pd.read_csv(gene_bed, sep="\t", header=None, names=["chrom", "start", "end", "id", "type"])
 gene_bed = load_Data(gene_bed, faidx, config["TSS_up"], config["TSS_down"]) # TSS up 1500, TSS down 500
-faidx.close()
 
 # 随机打乱gene bed
 gene_bed = gene_bed.sample(frac=1, random_state=123).reset_index(drop=True)
-infer_bed = gene_bed.iloc[:16]
+infer_bed = gene_bed.iloc[:]
 
-infer_dataset = GenomeBigWigDataset(
-    fasta_path=config["fasta_path"],
-    bigwig_path_list=[os.path.join(config["training_data_dir"], f) for f in config["bigwig_files"]],
-    chrom_regions = infer_bed,
-    sequence_length=config["sequence_length"],
-    tokenizer=tokenizer,
-    transform_fn = transform_fn,
-    keep_target_center_fraction=config["keep_target_center_fraction"],
-    num_samples=len(infer_bed)
-)
-infer_dataloader = DataLoader(
-    infer_dataset, 
-    batch_size=16, 
-    shuffle=False, 
-    num_workers=config["num_workers"]
-)
+# grads
+save_embeddings = []
+save_gradients = []
+save_genes = []
+batch_interval = 8000
 
-for idx, batch in enumerate(infer_dataloader):
+file_counter = 0
+for idx, row in tqdm(infer_bed.iterrows(), total=len(infer_bed)):
 
-    tokens, bigwig_targets, chrom, start, end = (
-        batch["tokens"].to(device), 
-        batch["bigwig_targets"].to(device), 
-        batch["chrom"], batch["start"], batch["end"]
-    )
-    with autocast(device_type="cuda", dtype=torch.float16):
-        with torch.no_grad():
-            outputs = model(tokens)
-            logits = outputs["bigwig_tracks_logits"]
+    chrom, start, end, id, _, region_start, region_end = row
+    seq = faidx[chrom][region_start:region_end].seq
+    gradient, one_hots = saliency_computer.compute_saliency(sequence=seq)
+    # change order into acgt (order in ntv3 atcg)
+    gradient, one_hots = gradient[:,6:10], one_hots[:, 6:10][:, [0, 2, 3, 1]]
+    
+    save_embeddings.append(one_hots)
+    save_gradients.append(gradient)
 
-    metrics.update(logits, bigwig_targets)
-    corr = metrics.compute()
-    for b in tqdm(range(logits.shape[0]), desc=f"Processing batch {idx}, total batch {len(infer_dataloader)}"):
-        corr_dict[f"{chrom[b]}_{start[b]}_{end[b]}"] = corr[b]
-        visualization_channels_means(
-            bigwig_targets[b, :, :].unsqueeze(0).detach().cpu().numpy(), logits[b, :, :].unsqueeze(0).detach().cpu().numpy(), 
-            order_dict, 
-            f"visualization/{chrom[b]}_{start[b]}_{end[b]}.png",
-        )
+    # 每8000个batch存储一次
+    if (idx + 1) % batch_interval == 0 or (idx + 1) == len(infer_bed):
+        save_embeddings_concat = np.concatenate(save_embeddings, axis=0)
+        save_gradients_concat = np.concatenate(save_gradients, axis=0)
+        
+        # 保存文件
+        np.save(f"/vepfs-C/vepfs_public/daijc/lncRNA/results/grads/embeddings_ordered_{file_counter}.npy", save_embeddings_concat)
+        np.save(f"/vepfs-C/vepfs_public/daijc/lncRNA/results/grads/gradients_ordered_{file_counter}.npy", save_gradients_concat)
+        
+        # 清空缓存
+        save_embeddings = []
+        save_gradients = []
+        save_genes = []
+        file_counter += 1
+
