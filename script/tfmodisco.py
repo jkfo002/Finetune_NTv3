@@ -12,7 +12,7 @@ from modiscolite.util import calculate_window_offsets
 if __name__ == '__main__':
 
     window  = 25600 # 从中间分开进行motif discovery (center - window_size // 2, center + window_size // 2)
-    max_seqlets = 20000
+    max_seqlets = -1 # -1 means using all seqlets changed in modiscolite.tfmodisco.TFMoDISco
     size = 20
     seqlet_flank_size = 5
     trim_size = 30
@@ -36,26 +36,26 @@ if __name__ == '__main__':
     all_attributions = np.concatenate(all_attributions, axis=0)
     all_sequences = np.concatenate(all_sequences, axis=0)
 
-    center = sequences.shape[2] // 2
+    center = all_sequences.shape[2] // 2
     start, end = calculate_window_offsets(center, window)
 
-    sequences = sequences[:, :, start:end].transpose(0, 2, 1)
-    attributions = attributions[:, :, start:end].transpose(0, 2, 1)
+    all_sequences = all_sequences[:, :, start:end].transpose(0, 2, 1)
+    all_attributions = all_attributions[:, :, start:end].transpose(0, 2, 1)
 
-    sequences = sequences.astype('float32')
-    attributions = attributions.astype('float32')
+    all_sequences = all_sequences.astype('float32')
+    all_attributions = all_attributions.astype('float32')
     
     pos_patterns, neg_patterns = modiscolite.tfmodisco.TFMoDISco(
-        hypothetical_contribs=attributions, 
-        one_hot=sequences,
+        hypothetical_contribs=all_attributions, 
+        one_hot=all_sequences,
         max_seqlets_per_metacluster=max_seqlets,
         sliding_window_size=size,
         flank_size=seqlet_flank_size,
         trim_to_window_size=trim_size,
         initial_flank_to_add=initial_flank_to_add,
         final_flank_to_add=final_flank_to_add,
-        target_seqlet_fdr=0.1,
+        target_seqlet_fdr=0.05,
         n_leiden_runs=n_leiden,
         verbose=verbose)
 
-    modiscolite.io.save_hdf5(f"/vepfs-C/vepfs_public/daijc/lncRNA/results/grads/modisco_ordered_all_win{window}.h5", pos_patterns, neg_patterns, window)
+    modiscolite.io.save_hdf5(f"/vepfs-C/vepfs_public/daijc/lncRNA/results/grads/modisco_ordered_all_win{window}_n{max_seqlets}.h5", pos_patterns, neg_patterns, window)

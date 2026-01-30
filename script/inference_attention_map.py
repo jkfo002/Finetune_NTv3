@@ -48,7 +48,7 @@ def _get_45deg_mesh(mat):
     xy_rot = R @ xy
     return xy_rot[0, :].reshape(K, K), xy_rot[1, :].reshape(K, K).T
 
-def plot_attention_panel(mat, filename=None, *, cmap="Blues", vmin=0.0001,
+def plot_attention_panel_Symmetrize(mat, filename=None, *, cmap="Blues", vmin=0.0001,
                          vmax=0.005, colorbar=True, dpi=600, figsize=(10, 10),
                          variant_id="", show_titles=True, show_xlabel=True,
                          show_xticks=True, show_yticks=False,
@@ -222,6 +222,114 @@ def plot_attention_panel(mat, filename=None, *, cmap="Blues", vmin=0.0001,
 
     return fig
 
+def plot_attention_panel(mat, filename=None, *, cmap="Blues", vmin=0.0001,
+                         vmax=0.005, colorbar=True, dpi=600, figsize=(10, 10),
+                         variant_id="", show_titles=True, show_xlabel=True,
+                         show_xticks=True, show_yticks=False,
+                         positions='TOKEN', token_resolution=128, show=True):
+    """Plot traditional rectangular attention heatmap (non-triangular style).
+
+    Args:
+        mat: Attention matrix to plot.
+        filename: Output filename. If None and show=True, displays plot.
+        cmap: Colormap name. Defaults to "Blues".
+        vmin: Minimum value for color scale. Defaults to 0.0001.
+        vmax: Maximum value for color scale. Defaults to 0.005.
+        colorbar: Whether to show colorbar. Defaults to True.
+        dpi: Figure DPI. Defaults to 600.
+        figsize: Figure size tuple. Defaults to (10, 10).
+        variant_id: Title for the plot. Defaults to "".
+        show_titles: Whether to show title. Defaults to True.
+        show_xlabel: Whether to show x-axis label. Defaults to True.
+        show_xticks: Whether to show x-axis ticks. Defaults to True.
+        show_yticks: Whether to show y-axis ticks. Defaults to False.
+        positions: 'TOKEN' or 'BP' for position units. Defaults to 'TOKEN'.
+        token_resolution: Base pairs per token. Defaults to 128.
+        show: Whether to display plot. Defaults to True.
+
+    Returns:
+        matplotlib.figure.Figure: The created figure object.
+    """
+    # Set up normalization
+    vcenter = (vmin + vmax) / 2
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=vcenter, vmax=vmax)
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+    im = ax.imshow(mat, cmap=cmap, norm=norm, origin='lower', aspect='auto')
+
+    # Format axes
+    use_bp_display = positions.upper() == 'BP'
+
+    ax.tick_params(width=LINE_WIDTH, length=3, labelsize=7)
+    for sp in ("top", "right"):
+        ax.spines[sp].set_visible(False)
+    ax.spines["bottom"].set_linewidth(LINE_WIDTH)
+    ax.spines["left"].set_linewidth(LINE_WIDTH)
+
+    if show_xticks and mat.size > 0:
+        n_tokens = mat.shape[0]
+        tick_positions = [0, n_tokens - 1]
+        if use_bp_display:
+            max_bp = (n_tokens - 1) * token_resolution
+            tick_labels = ['0', str(max_bp)]
+        else:
+            tick_labels = ['0', str(n_tokens - 1)]
+        ax.set_xticks(tick_positions)
+        ax.set_xticklabels(tick_labels)
+    else:
+        ax.set_xticks([])
+
+    if show_yticks and mat.size > 0:
+        n_tokens = mat.shape[0]
+        tick_positions = [0, n_tokens - 1]
+        if use_bp_display:
+            max_bp = (n_tokens - 1) * token_resolution
+            tick_labels = ['0', str(max_bp)]
+        else:
+            tick_labels = ['0', str(n_tokens - 1)]
+        ax.set_yticks(tick_positions)
+        ax.set_yticklabels(tick_labels)
+    else:
+        ax.set_yticks([])
+
+    if use_bp_display:
+        xlabel_text = "Position (base pairs)"
+        ylabel_text = "Position (base pairs)"
+    else:
+        xlabel_text = "Token position"
+        ylabel_text = "Token position"
+    if show_xlabel:
+        ax.set_xlabel(xlabel_text, fontsize=8)
+        ax.set_ylabel(ylabel_text, fontsize=8)
+
+    if show_titles and variant_id:
+        ax.set_title(variant_id, fontsize=9, pad=10)
+
+    ax.set_facecolor("white")
+
+    # Add colorbar
+    if colorbar:
+        cb = plt.colorbar(im, ax=ax, shrink=0.8, aspect=20)
+        cb.ax.tick_params(width=LINE_WIDTH*0.8, length=3, labelsize=7, direction="in")
+        cb.outline.set_linewidth(LINE_WIDTH*0.8)
+
+    if filename:
+        dirname = os.path.dirname(filename)
+        if dirname:
+            os.makedirs(dirname, exist_ok=True)
+        plt.savefig(
+            filename, dpi=600, bbox_inches="tight", facecolor='white'
+        )
+        print(f"✅ Saved attention plot: {filename}")
+        if not show:
+            plt.close(fig)
+    elif show:
+        plt.show()
+    else:
+        plt.close(fig)
+
+    return fig
+
 # setting
 # Extract attention from last layer
 layer_index = -1  # Last layer
@@ -276,11 +384,15 @@ for idx, batch in enumerate(infer_dataloader):
     for i in range(attention_maps.shape[0]):
         att_dict[f'{chrom[i]}_{start[i]}_{end[i]}'] = attention_maps[i, :, :, :].cpu().numpy() # (heads, seq_len, seq_len))
 
-def attention_map(attention_last_layer):
+def attention_map(attention_last_layer, symmetric=True, use_gaussian=False, gaussian_sigma=0.5, gaussian_truncate=2):
     # Average over heads and symmetrize
     # [seq_len, seq_len]
     attention_mean = attention_last_layer.mean(axis=0)
-    attention_mean = 0.5 * (attention_mean + attention_mean.T)  # Symmetrize
+    if symmetric:
+        attention_mean = 0.5 * (attention_mean + attention_mean.T)  # Symmetrize
+    if use_gaussian:
+        from scipy.ndimage import gaussian_filter
+        attention_mean = gaussian_filter(attention_mean, sigma=gaussian_sigma, truncate=gaussian_truncate)
 
     print(f"Attention map shape: {attention_mean.shape}")
     attn_min = attention_mean.min()
@@ -289,17 +401,37 @@ def attention_map(attention_last_layer):
 
     return attention_mean
 
-attention_mean = attention_map(att_dict['A157_chr06_57751086_57753958'])
-
-fig = plot_attention_panel(
-    attention_mean,
-    cmap="Blues",
-    vmin=0.0001,
-    vmax=0.005,
-    colorbar=True,
-    figsize=(10, 10),
-    show_xlabel=True,
-    show_xticks=True,
-    positions='TOKEN',
-    show=True,
+is_symmetric=True
+attention_mean = attention_map(
+    att_dict['A157_chr06_57751086_57753958'],
+    symmetric=is_symmetric,
+    use_gaussian=True,
+    gaussian_sigma=0.5,
+    gaussian_truncate=2,
 )
+if is_symmetric:
+    fig = plot_attention_panel_Symmetrize(
+        attention_mean,
+        cmap="Blues",
+        vmin=0.0001,
+        vmax=0.005,
+        colorbar=True,
+        figsize=(10, 10),
+        show_xlabel=True,
+        show_xticks=True,
+        positions='TOKEN',
+        show=True,
+    )
+else:
+    fig = plot_attention_panel(
+        attention_mean,
+        cmap="Blues",
+        vmin=0.0001,
+        vmax=0.005,
+        colorbar=True,
+        figsize=(10, 10),
+        show_xlabel=True,
+        show_xticks=True,
+        positions='TOKEN',
+        show=True,
+    )

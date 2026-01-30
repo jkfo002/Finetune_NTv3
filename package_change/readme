@@ -1,0 +1,10 @@
+Using tfmodisco v2.5.2 for downstream analysis
+
+# install
+# This version intergrated with modiscolite, do not use v0.5
+pip install modisco==v2.5.2 
+
+# replace modiscolite.tfmodisco with tfmodisco.py.bk
+# in tfmodisco.py.bk I change func
+# 1. max_seqlets_per_metacluster == -1 means use all seqlets for clustering
+# 2. add some message

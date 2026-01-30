@@ -8,3 +8,6 @@ visualization/
 **/__pycache__/
 
 run.sh
+run2.sh
+
+test2.ipynb
