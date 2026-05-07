@@ -63,9 +63,12 @@ def load_Data(gene_df, faidx, TSS_region_len_up, TSS_region_len_down):
     :param TSS_region_len_down: TSS区域长度 down
     """
 
-    filted_gene_df = gene_filter(gene_df, faidx, TSS_region_len_up, TSS_region_len_down)
+    filted_gene_df = gene_filter(gene_df, faidx, TSS_region_len_up, TSS_region_len_down).copy()
     filted_gene_df['region_start'] = filted_gene_df['start'] - TSS_region_len_up
     filted_gene_df['region_end'] = filted_gene_df['start'] + TSS_region_len_down
+    print("before drop duplicates: ", filted_gene_df.shape)
+    filted_gene_df = filted_gene_df.drop_duplicates(subset=['region_start', 'region_end'])
+    print("after drop duplicates: ", filted_gene_df.shape)
 
     return filted_gene_df
 

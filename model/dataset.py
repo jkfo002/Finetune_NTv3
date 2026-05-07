@@ -160,7 +160,20 @@ class GenomeBigWigDataset(Dataset):
         # Signal from bigWig tracks (numpy array) -> torch tensor
         # Get BigWig handles lazily (cached per worker process)
         bigwig_targets = np.array([
-            _get_h5_handle(bw_path)[chrom][region_start - 1 : region_end - 1]
+            (
+                _get_h5_handle(bw_path)[chrom][region_start - 1 : region_end - 1]
+                if bw_path.endswith(".h5")
+                else _get_bigwig_handle(bw_path).values(
+                    chrom, region_start - 1, region_end - 1, numpy=True
+                )
+                if bw_path.endswith(".bw")
+                else (_ for _ in ()).throw(
+                    ValueError(
+                        f"Unsupported track file format: {bw_path}. "
+                        "Expected '.h5' or '.bw'."
+                    )
+                )
+            )
             for bw_path in self.bigwig_path_list
         ])  # shape (num_tracks, seq_len)
         # Transpose to (seq_len, num_tracks)

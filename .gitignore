@@ -1,3 +1,7 @@
+.pixi/
+pixi.toml
+pixi.lock
+
 err.log
 test.py
 
