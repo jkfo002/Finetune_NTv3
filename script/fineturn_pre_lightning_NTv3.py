@@ -125,6 +125,7 @@ def main():
         batch_size=config["batch_size"],
         num_workers=config["num_workers"],
         keep_target_center_fraction=config["keep_target_center_fraction"],
+        track_label_list=config.get("track_label_list"),
     )
 
     # lightning model

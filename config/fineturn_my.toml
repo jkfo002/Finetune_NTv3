@@ -23,6 +23,15 @@ bigwig_files = [
     "0-1.sorted.rmdup.bw", "0-2.sorted.rmdup.bw", "12-1.sorted.rmdup.bw", "12-2.sorted.rmdup.bw",
     "24-1.sorted.rmdup.bw", "24-2.sorted.rmdup.bw", "48-1.sorted.rmdup.bw", "48-2.sorted.rmdup.bw"
 ]
+# 0 means RNA; 1 means ATAC; do not support other
+track_label_list = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0,
+    1, 1, 1, 1, 1, 1, 1, 1,
+]
 
 # training
 ## learning_rate

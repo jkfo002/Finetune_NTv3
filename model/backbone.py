@@ -29,6 +29,7 @@ class MyDataModule(LightningDataModule):
         sequence_length: int,
         tokenizer: AutoTokenizer,
         keep_target_center_fraction: float = 1.0,
+        track_label_list: list[int] | None = None,
         batch_size: int = 32,
         num_workers: int = 4,
     ):
@@ -41,6 +42,7 @@ class MyDataModule(LightningDataModule):
         self.sequence_length = sequence_length
         self.tokenizer = tokenizer
         self.keep_target_center_fraction = keep_target_center_fraction
+        self.track_label_list = track_label_list
         self.batch_size = batch_size
         self.num_workers = num_workers
 
@@ -124,6 +126,7 @@ class MyDataModule_NTv3(LightningDataModule):
             tokenizer=self.tokenizer,
             transform_fn=transform_fn,
             keep_target_center_fraction=self.keep_target_center_fraction,
+            track_label_list=self.track_label_list,
         )
     
     def train_dataloader(self):

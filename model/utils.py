@@ -110,15 +110,41 @@ def create_targets_scaling_fn(
 
     return transform_fn
 
-def transform_fn(x: torch.Tensor) -> torch.Tensor:
+def transform_fn(x: torch.Tensor, track_label_list: Optional[List[int]] = None) -> torch.Tensor:
     """
-    对tracks进行3/4幂次变换, 若幂次大于384则使用384+(y-384)^(1/2)
-    :param y: 输入的track值
+    对 RNA-Seq tracks 进行3/4幂次变换, 若幂次大于384则使用384+(y-384)^(1/2)。
+    对 ATAC-Seq tracks 使用 arcsinh 标准化。
+    :param x: 输入的track值，shape (..., num_tracks)
+    :param track_label_list: track 类型标签，0 为 RNA-Seq，1 为 ATAC-Seq
     :return: 变换后的值
     """
-    transformed = torch.pow(x, 0.75)
-    mask = transformed > 384
-    transformed[mask] = 384 + torch.sqrt(transformed[mask] - 384)
+    if track_label_list is None:
+        transformed = torch.pow(x, 0.75)
+        mask = transformed > 384
+        transformed[mask] = 384 + torch.sqrt(transformed[mask] - 384)
+        return transformed
+
+    labels = torch.tensor(track_label_list, dtype=torch.long, device=x.device)
+    if labels.numel() != x.shape[-1]:
+        raise ValueError(
+            f"track_label_list length ({labels.numel()}) must match number of tracks ({x.shape[-1]})."
+        )
+
+    transformed = torch.empty_like(x)
+    rna_mask = labels == 0
+    atac_mask = labels == 1
+    if (~(rna_mask | atac_mask)).any():
+        invalid_labels = labels[~(rna_mask | atac_mask)].unique().tolist()
+        raise ValueError(f"Unsupported track labels: {invalid_labels}. Expected 0 (RNA-Seq) or 1 (ATAC-Seq).")
+
+    if rna_mask.any():
+        rna_transformed = torch.pow(x[..., rna_mask], 0.75)
+        clip_mask = rna_transformed > 384
+        rna_transformed[clip_mask] = 384 + torch.sqrt(rna_transformed[clip_mask] - 384)
+        transformed[..., rna_mask] = rna_transformed
+
+    if atac_mask.any():
+        transformed[..., atac_mask] = torch.asinh(x[..., atac_mask])
 
     return transformed
 

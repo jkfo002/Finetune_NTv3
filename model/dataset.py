@@ -125,10 +125,16 @@ class GenomeBigWigDataset(Dataset):
         tokenizer: AutoTokenizer,
         transform_fn: Callable[[torch.Tensor], torch.Tensor],
         keep_target_center_fraction: float = 1.0,
+        track_label_list: Optional[List[int]] = None,
     ):
         super().__init__()
 
         # Store paths instead of opening files immediately (for multi-worker compatibility)
+        if track_label_list is not None and len(track_label_list) != len(bigwig_path_list):
+            raise ValueError(
+                f"track_label_list length ({len(track_label_list)}) must match "
+                f"bigwig_path_list length ({len(bigwig_path_list)})."
+            )
         self.fasta_path = fasta_path
         self.bigwig_path_list = bigwig_path_list
         self.sequence_length = sequence_length
@@ -136,6 +142,7 @@ class GenomeBigWigDataset(Dataset):
         self.tokenizer = tokenizer
         self.transform_fn = transform_fn
         self.keep_target_center_fraction = keep_target_center_fraction
+        self.track_label_list = track_label_list
         self.chrom_regions = chrom_regions
 
     def __len__(self):
@@ -186,7 +193,7 @@ class GenomeBigWigDataset(Dataset):
         bigwig_targets = torch.nan_to_num(bigwig_targets, nan=0.0)
 
         # Apply scaling to targets
-        bigwig_targets = self.transform_fn(bigwig_targets)
+        bigwig_targets = self.transform_fn(bigwig_targets, self.track_label_list)
 
         sample = {
             "tokens": tokens,
