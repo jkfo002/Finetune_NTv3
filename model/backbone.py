@@ -266,11 +266,12 @@ class MyModel(LightningModule):
         # 每100个batch计算并记录一次指标
         if (batch_idx + 1) % 100 == 0:
             # 计算当前累积的指标
-            train_metrics_result = self.train_metrics.compute()
+            train_metrics_result = self.train_metrics.compute(sync_dist=self.trainer.world_size > 1)
             
             # 记录平均损失和平均皮尔逊相关系数
-            self.log("train_avg_loss", train_metrics_result["loss"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)
-            self.log("train_avg_pearson", train_metrics_result["mean/pearson"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)
+            if self.trainer.is_global_zero:
+                self.log("train_avg_loss", train_metrics_result["loss"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=False, rank_zero_only=True)
+                self.log("train_avg_pearson", train_metrics_result["mean/pearson"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=False, rank_zero_only=True)
         
             # 重置step metrics以便下一个100步的累积
             self.train_metrics.reset()
@@ -280,11 +281,12 @@ class MyModel(LightningModule):
         # 每100个batch计算并记录一次指标
         if (batch_idx + 1) % 100 == 0:
             # 计算当前累积的指标
-            val_metrics_result = self.val_metrics.compute()
+            val_metrics_result = self.val_metrics.compute(sync_dist=self.trainer.world_size > 1)
             
             # 记录平均损失和平均皮尔逊相关系数
-            self.log("val_avg_loss", val_metrics_result["loss"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)
-            self.log("val_avg_pearson", val_metrics_result["mean/pearson"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)
+            if self.trainer.is_global_zero:
+                self.log("val_avg_loss", val_metrics_result["loss"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=False, rank_zero_only=True)
+                self.log("val_avg_pearson", val_metrics_result["mean/pearson"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=False, rank_zero_only=True)
         
             # 重置step metrics以便下一个100步的累积
             self.val_metrics.reset()
@@ -293,38 +295,42 @@ class MyModel(LightningModule):
         # 每100个batch计算并记录一次指标
         if (batch_idx + 1) % 100 == 0:
             # 计算当前累积的指标
-            test_metrics_result = self.test_metrics.compute()
+            test_metrics_result = self.test_metrics.compute(sync_dist=self.trainer.world_size > 1)
             
             # 记录平均损失和平均皮尔逊相关系数
-            self.log("test_avg_loss", test_metrics_result["loss"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)
-            self.log("test_avg_pearson", test_metrics_result["mean/pearson"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)
+            if self.trainer.is_global_zero:
+                self.log("test_avg_loss", test_metrics_result["loss"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=False, rank_zero_only=True)
+                self.log("test_avg_pearson", test_metrics_result["mean/pearson"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=False, rank_zero_only=True)
         
             # 重置step metrics以便下一个100步的累积
             self.test_metrics.reset()
 
     def on_train_epoch_end(self):
         # 计算并记录训练epoch级别的指标
-        train_epoch_metrics = self.train_metrics_epoch.compute()
-        self.log("train_epoch_loss", train_epoch_metrics["loss"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
-        self.log("train_epoch_pearson", train_epoch_metrics["mean/pearson"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        train_epoch_metrics = self.train_metrics_epoch.compute(sync_dist=self.trainer.world_size > 1)
+        if self.trainer.is_global_zero:
+            self.log("train_epoch_loss", train_epoch_metrics["loss"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=False, rank_zero_only=True)
+            self.log("train_epoch_pearson", train_epoch_metrics["mean/pearson"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=False, rank_zero_only=True)
         
         # 重置epoch metrics以便下一个epoch的累积
         self.train_metrics_epoch.reset()
 
     def on_validation_epoch_end(self):
         # 计算并记录验证epoch级别的指标
-        val_epoch_metrics = self.val_metrics_epoch.compute()
-        self.log("val_epoch_loss", val_epoch_metrics["loss"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
-        self.log("val_epoch_pearson", val_epoch_metrics["mean/pearson"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        val_epoch_metrics = self.val_metrics_epoch.compute(sync_dist=self.trainer.world_size > 1)
+        if self.trainer.is_global_zero:
+            self.log("val_epoch_loss", val_epoch_metrics["loss"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=False, rank_zero_only=True)
+            self.log("val_epoch_pearson", val_epoch_metrics["mean/pearson"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=False, rank_zero_only=True)
         
         # 重置epoch metrics以便下一个epoch的累积
         self.val_metrics_epoch.reset()
     
     def on_test_epoch_end(self):
         # 计算并记录测试epoch级别的指标
-        test_epoch_metrics = self.test_metrics_epoch.compute()
-        self.log("test_epoch_loss", test_epoch_metrics["loss"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
-        self.log("test_epoch_pearson", test_epoch_metrics["mean/pearson"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        test_epoch_metrics = self.test_metrics_epoch.compute(sync_dist=self.trainer.world_size > 1)
+        if self.trainer.is_global_zero:
+            self.log("test_epoch_loss", test_epoch_metrics["loss"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=False, rank_zero_only=True)
+            self.log("test_epoch_pearson", test_epoch_metrics["mean/pearson"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=False, rank_zero_only=True)
         
         # 重置epoch metrics以便下一个epoch的累积
         self.test_metrics_epoch.reset()

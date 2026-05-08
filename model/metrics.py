@@ -1,8 +1,7 @@
 import torch
-from torchmetrics import PearsonCorrCoef
+import torch.distributed as dist
 import numpy as np
-import pandas as pd
-from typing import List, Dict, Optional
+from typing import Dict, Optional
 
 class TracksMetrics:
     """Metrics to handle multi-track pearson correlations and losses"""
@@ -10,20 +9,29 @@ class TracksMetrics:
     def __init__(self, num_tracks: int, split: str):
         self.num_tracks = num_tracks
         self.split = split
-
-        # Initialise metrics 
-        self.pearson = PearsonCorrCoef(num_outputs=self.num_tracks)
-        self.pearson.set_dtype(torch.float64) # Use float64 for improved numerical stability
-        self.losses = []
-
-        # Record mean metrics per logging interval
-        self.step_idxs = []
-        self.mean_pearsons = []
-        self.mean_losses = []
+        self.reset()
     
     def reset(self):
-        self.pearson.reset()
-        self.losses = []
+        self.sum_x = None
+        self.sum_y = None
+        self.sum_x2 = None
+        self.sum_y2 = None
+        self.sum_xy = None
+        self.n = None
+        self.loss_sum = None
+        self.loss_count = None
+
+    def _ensure_state(self, device: torch.device):
+        if self.sum_x is None:
+            zeros = torch.zeros(self.num_tracks, dtype=torch.float64, device=device)
+            self.sum_x = zeros.clone()
+            self.sum_y = zeros.clone()
+            self.sum_x2 = zeros.clone()
+            self.sum_y2 = zeros.clone()
+            self.sum_xy = zeros.clone()
+            self.n = torch.zeros(1, dtype=torch.float64, device=device)
+            self.loss_sum = torch.zeros(1, dtype=torch.float64, device=device)
+            self.loss_count = torch.zeros(1, dtype=torch.float64, device=device)
     
     def update(
         self, 
@@ -34,28 +42,74 @@ class TracksMetrics:
         """
         Update the metrics with predictions and targets of shape (..., num_tracks) and a scalar loss.
         """
-        input_device = predictions.device
-        if self.pearson.device != input_device:
-            self.pearson = self.pearson.to(input_device)
-
+        self._ensure_state(predictions.device)
         pred_flat = predictions.detach().reshape(-1, self.num_tracks).to(dtype=torch.float64)
         target_flat = targets.detach().reshape(-1, self.num_tracks).to(dtype=torch.float64)
 
-        self.pearson.update(pred_flat, target_flat)
-        self.losses.append(loss)
+        self.sum_x += pred_flat.sum(dim=0)
+        self.sum_y += target_flat.sum(dim=0)
+        self.sum_x2 += (pred_flat ** 2).sum(dim=0)
+        self.sum_y2 += (target_flat ** 2).sum(dim=0)
+        self.sum_xy += (pred_flat * target_flat).sum(dim=0)
+        self.n += pred_flat.new_tensor([pred_flat.shape[0]], dtype=torch.float64)
+
+        if loss is not None:
+            self.loss_sum += pred_flat.new_tensor([float(loss)], dtype=torch.float64)
+            self.loss_count += pred_flat.new_tensor([1.0], dtype=torch.float64)
     
-    def compute(self) -> Dict[str, float]:
+    def compute(self, sync_dist: bool = False) -> Dict[str, float]:
         """Compute the pearson correlations and loss and return a dictionary of metrics."""
-        # Per-track Pearson correlations
-        correlations = self.pearson.compute().cpu().numpy()
+        if self.sum_x is None:
+            metrics_dict = {f"track{i}/pearson": 0.0 for i in range(self.num_tracks)}
+            metrics_dict["mean/pearson"] = 0.0
+            metrics_dict["loss"] = 0.0
+            return metrics_dict
+
+        stats = torch.cat([
+            self.sum_x,
+            self.sum_y,
+            self.sum_x2,
+            self.sum_y2,
+            self.sum_xy,
+            self.n,
+            self.loss_sum,
+            self.loss_count,
+        ]).clone()
+
+        if sync_dist and dist.is_available() and dist.is_initialized():
+            dist.all_reduce(stats, op=dist.ReduceOp.SUM)
+
+        offset = 0
+        sum_x = stats[offset : offset + self.num_tracks]
+        offset += self.num_tracks
+        sum_y = stats[offset : offset + self.num_tracks]
+        offset += self.num_tracks
+        sum_x2 = stats[offset : offset + self.num_tracks]
+        offset += self.num_tracks
+        sum_y2 = stats[offset : offset + self.num_tracks]
+        offset += self.num_tracks
+        sum_xy = stats[offset : offset + self.num_tracks]
+        offset += self.num_tracks
+        n = stats[offset : offset + 1]
+        offset += 1
+        loss_sum = stats[offset : offset + 1]
+        offset += 1
+        loss_count = stats[offset : offset + 1]
+
+        eps = 1e-12
+        numerator = n * sum_xy - sum_x * sum_y
+        denominator = torch.sqrt((n * sum_x2 - sum_x ** 2).clamp_min(0.0) * (n * sum_y2 - sum_y ** 2).clamp_min(0.0) + eps)
+        correlations = torch.where(denominator > 0, numerator / denominator, torch.zeros_like(numerator))
+        correlations = correlations.clamp(-1.0, 1.0).cpu().numpy()
         metrics_dict = {
-            f"track{i}/pearson": correlations[i] for i in range(self.num_tracks)
+            f"track{i}/pearson": float(correlations[i]) for i in range(self.num_tracks)
         }
-        metrics_dict["mean/pearson"] = correlations.mean()
+        metrics_dict["mean/pearson"] = float(correlations.mean())
         
-        # Mean loss
-    
-        metrics_dict["loss"] = np.mean(self.losses)
+        if loss_count.item() > 0:
+            metrics_dict["loss"] = float((loss_sum / loss_count).item())
+        else:
+            metrics_dict["loss"] = 0.0
         
         return metrics_dict
 
