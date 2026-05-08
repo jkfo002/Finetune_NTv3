@@ -20,6 +20,8 @@ from transformers import AutoConfig, AutoModelForMaskedLM, AutoTokenizer
 from tqdm.auto import tqdm
 import toml
 import pyfaidx
+import argparse
+import swanlab
 
 from model.head import HFModelWithHead
 from model.backbone import MyDataModule_NTv3, MyModel
@@ -39,7 +41,11 @@ def set_callbacks(config: Dict) -> Tuple[LearningRateMonitor, ModelCheckpoint]:
 
 def main():
     # config
-    config = load_config("config/fineturn_my.toml")
+    parser = argparse.ArgumentParser(description="Finetune NTv3")
+    parser.add_argument("--config", type=str, required=True, help="Path to the config file, default: config/fineturn_my.toml")
+    args = parser.parse_args()
+    
+    config = load_config(args.config)
     config = init_config(config)
 
     model, tokenizer = init_model(config, HFModelWithHead) # init model and tokenizer
@@ -58,6 +64,9 @@ def main():
     train_chrom_regions = gene_bed.iloc[:train_size]
     valid_chrom_regions = gene_bed.iloc[train_size:train_size + val_size]
     test_chrom_regions = gene_bed.iloc[train_size + val_size:]
+    print("="*30)
+    print(f"train_size: {train_size}, val_size: {val_size}, test_size: {total_size - train_size - val_size}")
+    print("="*30)
 
     # lightning dataset
     pl_datamodule = MyDataModule_NTv3(
@@ -81,6 +90,10 @@ def main():
     )
 
     # trainer
+    if not os.path.exists(config["log_dir"]):
+        os.makedirs(config["log_dir"])
+    if not os.path.exists(config["checkpoints"]):
+        os.makedirs(config["checkpoints"])
     lr_monitor, checkpoint_callback = set_callbacks(config)
     if config['num_devices'] > 1:
         trainer = Trainer(

@@ -193,14 +193,14 @@ class MyModel(LightningModule):
     def init_metric_target(self):
 
         # for step metrics
-        self.train_metrics = TracksMetrics(self.config["num_tracks"], "train", device=self.to_device)
-        self.val_metrics = TracksMetrics(self.config["num_tracks"], "val", device=self.to_device)
-        self.test_metrics = TracksMetrics(self.config["num_tracks"], "test", device=self.to_device)
+        self.train_metrics = TracksMetrics(self.config["num_tracks"], "train")
+        self.val_metrics = TracksMetrics(self.config["num_tracks"], "val")
+        self.test_metrics = TracksMetrics(self.config["num_tracks"], "test")
 
         # for epoch metrics
-        self.train_metrics_epoch = TracksMetrics(self.config["num_tracks"], "train", device=self.to_device)
-        self.val_metrics_epoch = TracksMetrics(self.config["num_tracks"], "val", device=self.to_device)
-        self.test_metrics_epoch = TracksMetrics(self.config["num_tracks"], "test", device=self.to_device)
+        self.train_metrics_epoch = TracksMetrics(self.config["num_tracks"], "train")
+        self.val_metrics_epoch = TracksMetrics(self.config["num_tracks"], "val")
+        self.test_metrics_epoch = TracksMetrics(self.config["num_tracks"], "test")
 
 
     def configure_optimizers(self):
@@ -218,7 +218,7 @@ class MyModel(LightningModule):
         bigwig_logits = outputs["bigwig_tracks_logits"]
         
         loss = self.loss_fn(logits=bigwig_logits, targets=bigwig_targets)
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
         self.train_metrics.update(bigwig_logits, bigwig_targets, loss.item())
         self.train_metrics_epoch.update(bigwig_logits, bigwig_targets, loss.item())
@@ -232,7 +232,7 @@ class MyModel(LightningModule):
         bigwig_logits = outputs["bigwig_tracks_logits"]
         
         loss = self.loss_fn(logits=bigwig_logits, targets=bigwig_targets)
-        self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         self.val_metrics.update(bigwig_logits, bigwig_targets, loss.item())
         self.val_metrics_epoch.update(bigwig_logits, bigwig_targets, loss.item())
         
@@ -246,7 +246,7 @@ class MyModel(LightningModule):
         bigwig_logits = outputs["bigwig_tracks_logits"]
         
         loss = self.loss_fn(logits=bigwig_logits, targets=bigwig_targets)
-        self.log("test_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log("test_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
         # Log metrics
         self.test_metrics.update(bigwig_logits, bigwig_targets, loss.item())
@@ -269,8 +269,8 @@ class MyModel(LightningModule):
             train_metrics_result = self.train_metrics.compute()
             
             # 记录平均损失和平均皮尔逊相关系数
-            self.log("train_avg_loss", train_metrics_result["loss"], on_step=False, on_epoch=True, prog_bar=False)
-            self.log("train_avg_pearson", train_metrics_result["mean/pearson"], on_step=False, on_epoch=True, prog_bar=False)
+            self.log("train_avg_loss", train_metrics_result["loss"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)
+            self.log("train_avg_pearson", train_metrics_result["mean/pearson"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)
         
             # 重置step metrics以便下一个100步的累积
             self.train_metrics.reset()
@@ -283,8 +283,8 @@ class MyModel(LightningModule):
             val_metrics_result = self.val_metrics.compute()
             
             # 记录平均损失和平均皮尔逊相关系数
-            self.log("val_avg_loss", val_metrics_result["loss"], on_step=False, on_epoch=True, prog_bar=False)
-            self.log("val_avg_pearson", val_metrics_result["mean/pearson"], on_step=False, on_epoch=True, prog_bar=False)
+            self.log("val_avg_loss", val_metrics_result["loss"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)
+            self.log("val_avg_pearson", val_metrics_result["mean/pearson"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)
         
             # 重置step metrics以便下一个100步的累积
             self.val_metrics.reset()
@@ -296,8 +296,8 @@ class MyModel(LightningModule):
             test_metrics_result = self.test_metrics.compute()
             
             # 记录平均损失和平均皮尔逊相关系数
-            self.log("test_avg_loss", test_metrics_result["loss"], on_step=False, on_epoch=True, prog_bar=False)
-            self.log("test_avg_pearson", test_metrics_result["mean/pearson"], on_step=False, on_epoch=True, prog_bar=False)
+            self.log("test_avg_loss", test_metrics_result["loss"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)
+            self.log("test_avg_pearson", test_metrics_result["mean/pearson"], on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)
         
             # 重置step metrics以便下一个100步的累积
             self.test_metrics.reset()
@@ -305,8 +305,8 @@ class MyModel(LightningModule):
     def on_train_epoch_end(self):
         # 计算并记录训练epoch级别的指标
         train_epoch_metrics = self.train_metrics_epoch.compute()
-        self.log("train_epoch_loss", train_epoch_metrics["loss"], on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        self.log("train_epoch_pearson", train_epoch_metrics["mean/pearson"], on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        self.log("train_epoch_loss", train_epoch_metrics["loss"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        self.log("train_epoch_pearson", train_epoch_metrics["mean/pearson"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         
         # 重置epoch metrics以便下一个epoch的累积
         self.train_metrics_epoch.reset()
@@ -314,8 +314,8 @@ class MyModel(LightningModule):
     def on_validation_epoch_end(self):
         # 计算并记录验证epoch级别的指标
         val_epoch_metrics = self.val_metrics_epoch.compute()
-        self.log("val_epoch_loss", val_epoch_metrics["loss"], on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        self.log("val_epoch_pearson", val_epoch_metrics["mean/pearson"], on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        self.log("val_epoch_loss", val_epoch_metrics["loss"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        self.log("val_epoch_pearson", val_epoch_metrics["mean/pearson"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         
         # 重置epoch metrics以便下一个epoch的累积
         self.val_metrics_epoch.reset()
@@ -323,8 +323,8 @@ class MyModel(LightningModule):
     def on_test_epoch_end(self):
         # 计算并记录测试epoch级别的指标
         test_epoch_metrics = self.test_metrics_epoch.compute()
-        self.log("test_epoch_loss", test_epoch_metrics["loss"], on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        self.log("test_epoch_pearson", test_epoch_metrics["mean/pearson"], on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        self.log("test_epoch_loss", test_epoch_metrics["loss"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        self.log("test_epoch_pearson", test_epoch_metrics["mean/pearson"], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         
         # 重置epoch metrics以便下一个epoch的累积
         self.test_metrics_epoch.reset()

@@ -7,12 +7,12 @@ from typing import List, Dict, Optional
 class TracksMetrics:
     """Metrics to handle multi-track pearson correlations and losses"""
     
-    def __init__(self, num_tracks: int, split: str, device: str):
+    def __init__(self, num_tracks: int, split: str):
         self.num_tracks = num_tracks
         self.split = split
 
         # Initialise metrics 
-        self.pearson = PearsonCorrCoef(num_outputs=self.num_tracks).to(device)
+        self.pearson = PearsonCorrCoef(num_outputs=self.num_tracks)
         self.pearson.set_dtype(torch.float64) # Use float64 for improved numerical stability
         self.losses = []
 
@@ -34,11 +34,13 @@ class TracksMetrics:
         """
         Update the metrics with predictions and targets of shape (..., num_tracks) and a scalar loss.
         """
-        # Flatten batch and sequence dimensions
-        pred_flat = predictions.detach().reshape(-1, self.num_tracks).to(torch.float64)  # (N, num_tracks)
-        target_flat = targets.detach().reshape(-1, self.num_tracks).to(torch.float64)  # (N, num_tracks)
-        
-        # Update metrics
+        input_device = predictions.device
+        if self.pearson.device != input_device:
+            self.pearson = self.pearson.to(input_device)
+
+        pred_flat = predictions.detach().reshape(-1, self.num_tracks).to(dtype=torch.float64)
+        target_flat = targets.detach().reshape(-1, self.num_tracks).to(dtype=torch.float64)
+
         self.pearson.update(pred_flat, target_flat)
         self.losses.append(loss)
     

@@ -13,6 +13,7 @@ visualization/
 
 run.sh
 run2.sh
+tensorboard.sh
 
 test2.ipynb
 *png
