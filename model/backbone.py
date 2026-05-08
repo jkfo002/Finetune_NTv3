@@ -104,6 +104,7 @@ class MyDataModule_NTv3(LightningDataModule):
         keep_target_center_fraction: float = 1.0,
         batch_size: int = 32,
         num_workers: int = 4,
+        track_label_list: list[int] | None = None,
     ):
         super().__init__()
         self.fasta_path = fasta_path
@@ -117,6 +118,7 @@ class MyDataModule_NTv3(LightningDataModule):
         self.keep_target_center_fraction = keep_target_center_fraction
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.track_label_list = track_label_list
 
         self.create_dataset_fn = functools.partial(
             GenomeBigWigDataset,
