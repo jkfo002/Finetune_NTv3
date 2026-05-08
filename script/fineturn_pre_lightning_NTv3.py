@@ -1,5 +1,12 @@
 import functools
 import os
+
+# Set distributed debug env vars before importing torch/lightning so DDP child
+# processes inherit them early enough for NCCL flight recorder setup.
+os.environ["TORCH_NCCL_TRACE_BUFFER_SIZE"] = "200000"
+os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
+os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
+
 import random
 from pathlib import Path
 from typing import Callable, Dict, List, Tuple
@@ -96,10 +103,6 @@ def main():
         os.makedirs(config["checkpoints"])
     lr_monitor, checkpoint_callback = set_callbacks(config)
     if config['num_devices'] > 1:
-        # Improve visibility for distributed hangs and avoid HDF5 lock contention in multi-process reads.
-        os.environ.setdefault("TORCH_NCCL_TRACE_BUFFER_SIZE", "200000")
-        os.environ.setdefault("TORCH_DISTRIBUTED_DEBUG", "DETAIL")
-        os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
         trainer = Trainer(
             max_steps=config["max_steps"],
             precision="bf16-mixed",

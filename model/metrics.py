@@ -60,10 +60,14 @@ class TracksMetrics:
     def compute(self, sync_dist: bool = False) -> Dict[str, float]:
         """Compute the pearson correlations and loss and return a dictionary of metrics."""
         if self.sum_x is None:
-            metrics_dict = {f"track{i}/pearson": 0.0 for i in range(self.num_tracks)}
-            metrics_dict["mean/pearson"] = 0.0
-            metrics_dict["loss"] = 0.0
-            return metrics_dict
+            if sync_dist and dist.is_available() and dist.is_initialized():
+                device = torch.device("cuda", torch.cuda.current_device()) if torch.cuda.is_available() else torch.device("cpu")
+                self._ensure_state(device)
+            else:
+                metrics_dict = {f"track{i}/pearson": 0.0 for i in range(self.num_tracks)}
+                metrics_dict["mean/pearson"] = 0.0
+                metrics_dict["loss"] = 0.0
+                return metrics_dict
 
         stats = torch.cat([
             self.sum_x,
