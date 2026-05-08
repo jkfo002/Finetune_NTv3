@@ -1,5 +1,6 @@
 from pytorch_lightning import LightningDataModule, LightningModule
 import torch
+import torch.distributed as dist
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from torch.optim import AdamW
@@ -210,6 +211,13 @@ class MyModel(LightningModule):
             "lr_scheduler": {'scheduler':self.scheduler, "interval": "step", "frequency": 1,}
         }
 
+    def _sync_scalar_mean(self, value: torch.Tensor) -> torch.Tensor:
+        synced = value.detach().clone()
+        if self.trainer.world_size > 1 and dist.is_available() and dist.is_initialized():
+            dist.all_reduce(synced, op=dist.ReduceOp.SUM)
+            synced /= self.trainer.world_size
+        return synced
+
     def training_step(self, batch, batch_idx):
 
         tokens, bigwig_targets = batch["tokens"], batch["bigwig_targets"]
@@ -218,7 +226,8 @@ class MyModel(LightningModule):
         bigwig_logits = outputs["bigwig_tracks_logits"]
         
         loss = self.loss_fn(logits=bigwig_logits, targets=bigwig_targets)
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        synced_loss = self._sync_scalar_mean(loss)
+        self.log("train_loss", synced_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=False)
 
         self.train_metrics.update(bigwig_logits, bigwig_targets, loss.item())
         self.train_metrics_epoch.update(bigwig_logits, bigwig_targets, loss.item())
@@ -232,7 +241,8 @@ class MyModel(LightningModule):
         bigwig_logits = outputs["bigwig_tracks_logits"]
         
         loss = self.loss_fn(logits=bigwig_logits, targets=bigwig_targets)
-        self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        synced_loss = self._sync_scalar_mean(loss)
+        self.log("val_loss", synced_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=False)
         self.val_metrics.update(bigwig_logits, bigwig_targets, loss.item())
         self.val_metrics_epoch.update(bigwig_logits, bigwig_targets, loss.item())
         
@@ -246,7 +256,8 @@ class MyModel(LightningModule):
         bigwig_logits = outputs["bigwig_tracks_logits"]
         
         loss = self.loss_fn(logits=bigwig_logits, targets=bigwig_targets)
-        self.log("test_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        synced_loss = self._sync_scalar_mean(loss)
+        self.log("test_loss", synced_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=False)
 
         # Log metrics
         self.test_metrics.update(bigwig_logits, bigwig_targets, loss.item())

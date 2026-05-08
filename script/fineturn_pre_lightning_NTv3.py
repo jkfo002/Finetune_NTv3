@@ -34,6 +34,10 @@ from model.head import HFModelWithHead
 from model.backbone import MyDataModule_NTv3, MyModel
 from model.utils import load_config, init_config, init_model, load_ckpt_with_compile, load_Data
 
+os.environ["TORCH_NCCL_TRACE_BUFFER_SIZE"] = "200000"
+os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
+os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
+
 def set_callbacks(config: Dict) -> Tuple[LearningRateMonitor, ModelCheckpoint]:
     lr_monitor = LearningRateMonitor(logging_interval='step')
     checkpoint_callback = ModelCheckpoint(
