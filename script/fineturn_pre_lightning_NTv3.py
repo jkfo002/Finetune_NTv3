@@ -23,6 +23,7 @@ import pytorch_lightning as lightning
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
+from swanlab.integration.pytorch_lightning import SwanLabLogger
 from transformers import AutoConfig, AutoModelForMaskedLM, AutoTokenizer
 from tqdm.auto import tqdm
 import toml
@@ -33,10 +34,6 @@ import swanlab
 from model.head import HFModelWithHead
 from model.backbone import MyDataModule_NTv3, MyModel
 from model.utils import load_config, init_config, init_model, load_ckpt_with_compile, load_Data
-
-os.environ["TORCH_NCCL_TRACE_BUFFER_SIZE"] = "200000"
-os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
-os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 
 def set_callbacks(config: Dict) -> Tuple[LearningRateMonitor, ModelCheckpoint]:
     lr_monitor = LearningRateMonitor(logging_interval='step')
@@ -49,6 +46,43 @@ def set_callbacks(config: Dict) -> Tuple[LearningRateMonitor, ModelCheckpoint]:
     )
 
     return lr_monitor, checkpoint_callback
+
+
+
+def set_logger(config: Dict):
+
+    if not config.get("use_swanlab", False):
+        
+        if not os.path.exists(config["log_dir"]):
+            os.makedirs(config["log_dir"])
+
+        return TensorBoardLogger(
+            save_dir=config["log_dir"],
+            name=config["logger_prefix"],
+        )
+
+    def _resolve_secret(value: str | None) -> str | None:
+        if not value:
+            return None
+        if value.startswith("$"):
+            return os.environ.get(value[1:])
+        return value
+
+    swanlab_api_key = _resolve_secret(config.get("swanlab_api_key"))
+    if swanlab_api_key:
+        swanlab.login(api_key=swanlab_api_key, save=False)
+
+    swanlab_logdir = config.get("swanlab_logdir", config["log_dir"])
+    os.makedirs(swanlab_logdir, exist_ok=True)
+
+    return SwanLabLogger(
+        project=config["swanlab_project"],
+        experiment_name=config.get("swanlab_experiment_name", config["logger_prefix"]),
+        description=config.get("swanlab_description") or None,
+        workspace=config.get("swanlab_workspace") or None,
+        logdir=swanlab_logdir,
+        mode=config.get("swanlab_mode", "cloud"),
+    )
 
 def main():
     # config
@@ -101,11 +135,10 @@ def main():
     )
 
     # trainer
-    if not os.path.exists(config["log_dir"]):
-        os.makedirs(config["log_dir"])
     if not os.path.exists(config["checkpoints"]):
         os.makedirs(config["checkpoints"])
     lr_monitor, checkpoint_callback = set_callbacks(config)
+    logger = set_logger(config)
     if config['num_devices'] > 1:
         trainer = Trainer(
             max_steps=config["max_steps"],
@@ -115,10 +148,7 @@ def main():
             strategy="ddp",  # 添加分布式策略
             log_every_n_steps=config["log_every_n_steps"],
             check_val_every_n_epoch=config["check_val_every_n_epoch"],
-            logger=TensorBoardLogger(
-                save_dir=config["log_dir"],
-                name=config["logger_prefix"],
-            ),
+            logger=logger,
             callbacks=[lr_monitor, checkpoint_callback]
         )
     else:
@@ -129,10 +159,7 @@ def main():
             devices=config['num_devices'],
             log_every_n_steps=config["log_every_n_steps"],
             check_val_every_n_epoch=config["check_val_every_n_epoch"],
-            logger=TensorBoardLogger(
-                save_dir=config["log_dir"],
-                name=config["logger_prefix"],
-            ),
+            logger=logger,
             callbacks=[lr_monitor, checkpoint_callback]
         )
     

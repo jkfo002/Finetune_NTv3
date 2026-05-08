@@ -45,3 +45,13 @@ device = "cuda"
 log_dir="/vepfs-C/vepfs_public/daijc/lncRNA/log"
 checkpoints = "/vepfs-C/vepfs_public/daijc/lncRNA/checkpoints"
 logger_prefix="NTv3-pre-650M_fineturn_12.8k_k0.75"
+
+# Logger
+# when false use_tensorborad
+use_swanlab = true
+swanlab_api_key = "$SWANLAB_API_KEY"
+swanlab_project = "Finetune_NTv3"
+swanlab_experiment_name = "NTv3-pre-650M_fineturn_12.8k_k0.75"
+swanlab_description = "NTv3 650M finetuning"
+swanlab_logdir = "/vepfs-C/vepfs_public/daijc/lncRNA/swanlog"
+swanlab_workspace = ""
