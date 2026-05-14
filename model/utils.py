@@ -120,8 +120,8 @@ def transform_fn(x: torch.Tensor, track_label_list: Optional[List[int]] = None) 
     """
     if track_label_list is None:
         transformed = torch.pow(x, 0.75)
-        mask = transformed > 384
-        transformed[mask] = 384 + torch.sqrt(transformed[mask] - 384)
+        # mask = transformed > 384 # 仅进行0.75变换，数据深度不足
+        # transformed[mask] = 384 + torch.sqrt(transformed[mask] - 384)
         return transformed
 
     labels = torch.tensor(track_label_list, dtype=torch.long, device=x.device)
@@ -139,8 +139,8 @@ def transform_fn(x: torch.Tensor, track_label_list: Optional[List[int]] = None) 
 
     if rna_mask.any():
         rna_transformed = torch.pow(x[..., rna_mask], 0.75)
-        clip_mask = rna_transformed > 384
-        rna_transformed[clip_mask] = 384 + torch.sqrt(rna_transformed[clip_mask] - 384)
+        # clip_mask = rna_transformed > 384 # 仅进行0.75变换，数据深度不足
+        # rna_transformed[clip_mask] = 384 + torch.sqrt(rna_transformed[clip_mask] - 384)
         transformed[..., rna_mask] = rna_transformed
 
     if atac_mask.any():
