@@ -31,9 +31,30 @@ def init_model(config: Dict, model_cls) -> Tuple[nn.Module, AutoTokenizer]:
         model_name=config["model_name"],
         num_tracks=config["num_tracks"],
         keep_target_center_fraction=config["keep_target_center_fraction"],
+        head_type=config.get("head_type", "linear"),
     )
 
     return init_model, tokenizer
+
+
+def init_moe_model(config: Dict, model_cls) -> Tuple[nn.Module, AutoTokenizer]:
+    from .moe import load_moe_config
+
+    moe_config_path = config.get("moe_config_path")
+    if not moe_config_path:
+        raise ValueError("MoE training requires 'moe_config_path' pointing to MOE.json.")
+
+    moe_config = load_moe_config(moe_config_path)
+    config["moe_config"] = moe_config
+
+    tokenizer = AutoTokenizer.from_pretrained(config["model_name"], trust_remote_code=True)
+    model = model_cls(
+        model_name=config["model_name"],
+        num_tracks=config["num_tracks"],
+        moe_config=moe_config,
+        keep_target_center_fraction=config["keep_target_center_fraction"],
+    )
+    return model, tokenizer
 
 def gene_filter(gene_df, faidx, TSS_region_len_up, TSS_region_len_down):
     """

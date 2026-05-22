@@ -1,0 +1,22 @@
+{
+  "routing": "soft",
+  "num_experts": 8,
+  "top_k": 2,
+  "loss": {
+    "load_balance": {
+      "enabled": true,
+      "weight": 0.01
+    }
+  },
+  "expert_design": "expert_design.json",
+  "experts": [
+    {"id": 0, "name": "promoter_proximal", "description": "TSS-proximal regulatory regions"},
+    {"id": 1, "name": "gene_body", "description": "Exonic and intronic gene body"},
+    {"id": 2, "name": "intergenic", "description": "Distal intergenic background"},
+    {"id": 3, "name": "enhancer_like", "description": "Distal regulatory / enhancer-like signals"},
+    {"id": 4, "name": "repetitive", "description": "Repetitive or low-complexity sequence"},
+    {"id": 5, "name": "gc_rich", "description": "GC-rich sequence contexts"},
+    {"id": 6, "name": "at_rich", "description": "AT-rich sequence contexts"},
+    {"id": 7, "name": "mixed_context", "description": "Mixed or boundary contexts"}
+  ]
+}

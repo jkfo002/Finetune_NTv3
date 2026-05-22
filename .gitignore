@@ -13,7 +13,13 @@ visualization/
 
 run.sh
 run2.sh
+volc.sh
 tensorboard.sh
 
 test2.ipynb
 *png
+*toml
+CRE_Analysis_Pipeline_Specification.md
+
+pyrightconfig.json
+.vscode/

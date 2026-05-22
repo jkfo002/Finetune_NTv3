@@ -344,3 +344,68 @@ class MyModel(LightningModule):
         
         # 重置epoch metrics以便下一个epoch的累积
         self.test_metrics_epoch.reset()
+
+
+class MyModelMOE(MyModel):
+    """Lightning wrapper for MoE models; auxiliary losses come from MOE.json."""
+
+    def _compute_loss(self, outputs, bigwig_targets, stage: str):
+        from .moe import compute_moe_aux_loss
+
+        bigwig_logits = outputs["bigwig_tracks_logits"]
+        loss = self.loss_fn(logits=bigwig_logits, targets=bigwig_targets)
+
+        aux_loss, aux_logs = compute_moe_aux_loss(outputs, self.config.get("moe_config", {}))
+        if aux_loss is not None:
+            loss = loss + aux_loss
+            for name, value in aux_logs.items():
+                synced_value = self._sync_scalar_mean(value)
+                self.log(
+                    f"{stage}_{name}",
+                    synced_value,
+                    on_step=True,
+                    on_epoch=True,
+                    prog_bar=False,
+                    logger=True,
+                    sync_dist=False,
+                )
+
+        return loss, bigwig_logits
+
+    def training_step(self, batch, batch_idx):
+        tokens, bigwig_targets = batch["tokens"], batch["bigwig_targets"]
+
+        outputs = self(tokens)
+        loss, bigwig_logits = self._compute_loss(outputs, bigwig_targets, "train")
+        synced_loss = self._sync_scalar_mean(loss)
+        self.log("train_loss", synced_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=False)
+
+        self.train_metrics.update(bigwig_logits, bigwig_targets, loss.item())
+        self.train_metrics_epoch.update(bigwig_logits, bigwig_targets, loss.item())
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        tokens, bigwig_targets = batch["tokens"], batch["bigwig_targets"]
+
+        outputs = self(tokens)
+        loss, bigwig_logits = self._compute_loss(outputs, bigwig_targets, "val")
+        synced_loss = self._sync_scalar_mean(loss)
+        self.log("val_loss", synced_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=False)
+        self.val_metrics.update(bigwig_logits, bigwig_targets, loss.item())
+        self.val_metrics_epoch.update(bigwig_logits, bigwig_targets, loss.item())
+
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        tokens, bigwig_targets = batch["tokens"], batch["bigwig_targets"]
+
+        outputs = self(tokens)
+        loss, bigwig_logits = self._compute_loss(outputs, bigwig_targets, "test")
+        synced_loss = self._sync_scalar_mean(loss)
+        self.log("test_loss", synced_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=False)
+
+        self.test_metrics.update(bigwig_logits, bigwig_targets, loss.item())
+        self.test_metrics_epoch.update(bigwig_logits, bigwig_targets, loss.item())
+
+        return loss

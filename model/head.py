@@ -1,10 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Any, Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union
 import numpy as np
 from transformers import AutoConfig, AutoModelForMaskedLM, AutoTokenizer
 from .utils import crop_center
+
 
 class LinearHead(nn.Module):
     """A linear head that predicts one scalar value per track."""
@@ -20,6 +21,38 @@ class LinearHead(nn.Module):
         return x
 
 
+class GatedHead(nn.Module):
+    """A gated head that predicts one scalar value per track using GLU."""
+    def __init__(self, embed_dim: int, num_labels: int):
+        super().__init__()
+        self.layer_norm = nn.LayerNorm(embed_dim)
+        self.proj = nn.Linear(embed_dim, embed_dim * 2)
+        self.glu = nn.GLU(dim=-1)
+        self.head = nn.Linear(embed_dim, num_labels)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.layer_norm(x)
+        x = self.proj(x)
+        x = self.glu(x)
+        x = self.head(x)
+        x = F.softplus(x)  # Ensure positive values
+        return x
+
+
+HEAD_TYPES = {
+    "linear": LinearHead,
+    "gated": GatedHead,
+}
+
+
+def build_bigwig_head(head_type: str, embed_dim: int, num_tracks: int) -> nn.Module:
+    if head_type not in HEAD_TYPES:
+        raise ValueError(
+            f"Unknown head_type: {head_type!r}. Choose from {list(HEAD_TYPES.keys())}."
+        )
+    return HEAD_TYPES[head_type](embed_dim, num_tracks)
+
+
 class HFModelWithHead(nn.Module):
     """Simple model wrapper: HF backbone + bigwig head."""
     
@@ -28,6 +61,7 @@ class HFModelWithHead(nn.Module):
         model_name: str,
         num_tracks: int,
         keep_target_center_fraction: float = 0.375,
+        head_type: str = "linear",
     ):
         super().__init__()
         
@@ -41,10 +75,11 @@ class HFModelWithHead(nn.Module):
         self.backbone = torch.compile(backbone)
         
         self.keep_target_center_fraction = keep_target_center_fraction
+        self.head_type = head_type
         embed_dim = self.config.embed_dim
         
         # Bigwig head (NTv3 outputs at single-nucleotide resolution)
-        self.bigwig_head = LinearHead(embed_dim, num_tracks)
+        self.bigwig_head = build_bigwig_head(head_type, embed_dim, num_tracks)
         self.model_name = model_name
     
     def forward(self, tokens: torch.Tensor, **kwargs) -> Dict[str, Optional[Union[torch.Tensor, np.ndarray]]]:
@@ -64,6 +99,7 @@ class HFModelWithHead(nn.Module):
             "bigwig_tracks_logits": bigwig_logits
         }
 
+
 class HFModelWithHead_Infer(nn.Module):
     """Simple model wrapper: HF backbone + bigwig head.
     This model is used for inference only.
@@ -74,6 +110,7 @@ class HFModelWithHead_Infer(nn.Module):
         model_name: str,
         num_tracks: int,
         keep_target_center_fraction: float = 0.375,
+        head_type: str = "linear",
     ):
         super().__init__()
         
@@ -88,10 +125,11 @@ class HFModelWithHead_Infer(nn.Module):
         self.backbone = backbone
         
         self.keep_target_center_fraction = keep_target_center_fraction
+        self.head_type = head_type
         embed_dim = self.config.embed_dim
         
         # Bigwig head (NTv3 outputs at single-nucleotide resolution)
-        self.bigwig_head = LinearHead(embed_dim, num_tracks)
+        self.bigwig_head = build_bigwig_head(head_type, embed_dim, num_tracks)
         self.model_name = model_name
     
     def forward(self, tokens: torch.Tensor, return_logits_direct: bool = False, **kwargs) -> Dict[str, Optional[Union[torch.Tensor, np.ndarray]]]:
@@ -120,6 +158,7 @@ class HFModelWithHead_Infer(nn.Module):
             "bigwig_tracks_logits": bigwig_logits
         }
 
+
 class HFModelWithHead_Saliency(nn.Module):
     """Simple model wrapper: HF backbone + bigwig head.
     This model is used for inference only.
@@ -130,6 +169,7 @@ class HFModelWithHead_Saliency(nn.Module):
         model_name: str,
         num_tracks: int,
         keep_target_center_fraction: float = 0.375,
+        head_type: str = "linear",
     ):
         super().__init__()
         
@@ -144,10 +184,11 @@ class HFModelWithHead_Saliency(nn.Module):
         self.backbone = backbone
         
         self.keep_target_center_fraction = keep_target_center_fraction
+        self.head_type = head_type
         embed_dim = self.config.embed_dim
         
         # Bigwig head (NTv3 outputs at single-nucleotide resolution)
-        self.bigwig_head = LinearHead(embed_dim, num_tracks)
+        self.bigwig_head = build_bigwig_head(head_type, embed_dim, num_tracks)
         self.model_name = model_name
     
     def forward(self, input_embeds: torch.Tensor, return_logits_direct: bool = False, **kwargs) -> Dict[str, Optional[Union[torch.Tensor, np.ndarray]]]:
@@ -176,6 +217,7 @@ class HFModelWithHead_Saliency(nn.Module):
             "embedding": embedding,
             "bigwig_tracks_logits": bigwig_logits
         }
+
 
 class SaliencyComputer:
     """Compute gradient-based saliency maps (new model API)."""

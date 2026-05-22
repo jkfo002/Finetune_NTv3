@@ -32,8 +32,9 @@ import argparse
 import swanlab
 
 from model.head import HFModelWithHead
-from model.backbone import MyDataModule_NTv3, MyModel
-from model.utils import load_config, init_config, init_model, load_ckpt_with_compile, load_Data
+from model.moe import HFModelWithMoE
+from model.backbone import MyDataModule_NTv3, MyModel, MyModelMOE
+from model.utils import load_config, init_config, init_model, init_moe_model, load_ckpt_with_compile, load_Data
 
 def set_callbacks(config: Dict) -> Tuple[LearningRateMonitor, ModelCheckpoint]:
     lr_monitor = LearningRateMonitor(logging_interval='step')
@@ -93,7 +94,11 @@ def main():
     config = load_config(args.config)
     config = init_config(config)
 
-    model, tokenizer = init_model(config, HFModelWithHead) # init model and tokenizer
+    use_moe = config.get("use_moe", False)
+    if use_moe:
+        model, tokenizer = init_moe_model(config, HFModelWithMoE)
+    else:
+        model, tokenizer = init_model(config, HFModelWithHead)
 
     # data path
     faidx = pyfaidx.Fasta(config["fasta_path"])
@@ -129,7 +134,8 @@ def main():
     )
 
     # lightning model
-    pl_model = MyModel(
+    pl_model_cls = MyModelMOE if use_moe else MyModel
+    pl_model = pl_model_cls(
         model=model,
         config=config,
         device=config["device"],
