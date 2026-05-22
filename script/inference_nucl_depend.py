@@ -31,7 +31,12 @@ def Infer_for_Nucleotide_dependencies(model, infer_dataloader, device):
 
         with autocast(device_type="cuda", dtype=torch.float32):
             with torch.no_grad():
-                outputs = model(tokens, return_dict=True)
+                outputs = model(
+                    tokens=tokens,
+                    mode="infer",
+                    return_dict=True,
+                    return_logits_direct=True,
+                )
 
         output_probs = F.softmax(outputs['logits'], dim=-1)[:, :(TSS_UP+TSS_DOWN), ACGT_IDX]
         output_arrays.append(output_probs) 

@@ -377,7 +377,12 @@ for idx, batch in enumerate(infer_dataloader):
     tokens, bigwig_targets, chrom, start, end = batch["tokens"].to(device), batch["bigwig_targets"].to(device), batch["chrom"], batch["start"], batch["end"]
     with autocast(device_type="cuda", dtype=torch.bfloat16):
         with torch.no_grad():
-            outputs = model(tokens, return_dict=True)
+            outputs = model(
+                tokens,
+                mode="infer",
+                return_dict=True,
+                return_logits_direct=True,
+            )
         
         attention_maps = outputs.attentions[-1] # List[(batch, heads, seq_len, seq_len)] length:layers
     

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 import numpy as np
 from transformers import AutoConfig, AutoModelForMaskedLM, AutoTokenizer
 from .utils import crop_center
@@ -101,10 +101,8 @@ class HFModelWithHead(nn.Module):
 
 
 class HFModelWithHead_Infer(nn.Module):
-    """Simple model wrapper: HF backbone + bigwig head.
-    This model is used for inference only.
-    """
-    
+    """HF backbone + bigwig head for inference (token or saliency paths)."""
+
     def __init__(
         self,
         model_name: str,
@@ -117,83 +115,60 @@ class HFModelWithHead_Infer(nn.Module):
         # Load config and model
         self.config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
         backbone = AutoModelForMaskedLM.from_pretrained(
-            model_name, 
+            model_name,
             trust_remote_code=True,
             config=self.config,
         )
         # self.backbone = torch.compile(backbone)
         self.backbone = backbone
-        
+
         self.keep_target_center_fraction = keep_target_center_fraction
         self.head_type = head_type
         embed_dim = self.config.embed_dim
-        
-        # Bigwig head (NTv3 outputs at single-nucleotide resolution)
+
         self.bigwig_head = build_bigwig_head(head_type, embed_dim, num_tracks)
         self.model_name = model_name
-    
-    def forward(self, tokens: torch.Tensor, return_logits_direct: bool = False, **kwargs) -> Dict[str, Optional[Union[torch.Tensor, np.ndarray]]]:
-        
-        # Forward through backbone
+
+    def _run_head(
+        self,
+        embedding: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
+        if self.keep_target_center_fraction < 1.0:
+            embedding = crop_center(embedding, self.keep_target_center_fraction)
+
+        bigwig_logits = self.bigwig_head(embedding)
+        return {
+            "embedding": embedding,
+            "bigwig_tracks_logits": bigwig_logits,
+        }
+
+    def forward_infer(
+        self,
+        tokens: torch.Tensor,
+        return_logits_direct: bool = False,
+        return_dict: bool = True,
+        **kwargs,
+    ) -> Union[Dict[str, Optional[Union[torch.Tensor, np.ndarray]]], Any]:
+        return_dict = kwargs.pop("return_dict", return_dict)
         outputs = self.backbone(
             input_ids=tokens,
             output_hidden_states=True,
             output_attentions=True,
-            return_dict=True,
+            return_dict=return_dict,
         )
         if return_logits_direct:
             return outputs
 
-        embedding = outputs.hidden_states[-1]  # Last hidden state
-        
-        # Crop to center fraction
-        if self.keep_target_center_fraction < 1.0:
-            embedding = crop_center(embedding, self.keep_target_center_fraction)
-        
-        # Predict bigwig tracks
-        bigwig_logits = self.bigwig_head(embedding)
-        
-        return {
-            "embedding": embedding,
-            "bigwig_tracks_logits": bigwig_logits
-        }
+        embedding = outputs.hidden_states[-1]
+        return self._run_head(embedding)
 
-
-class HFModelWithHead_Saliency(nn.Module):
-    """Simple model wrapper: HF backbone + bigwig head.
-    This model is used for inference only.
-    """
-    
-    def __init__(
+    def forward_saliency(
         self,
-        model_name: str,
-        num_tracks: int,
-        keep_target_center_fraction: float = 0.375,
-        head_type: str = "linear",
-    ):
-        super().__init__()
-        
-        # Load config and model
-        self.config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
-        backbone = AutoModelForMaskedLM.from_pretrained(
-            model_name, 
-            trust_remote_code=True,
-            config=self.config,
-        )
-        # self.backbone = torch.compile(backbone)
-        self.backbone = backbone
-        
-        self.keep_target_center_fraction = keep_target_center_fraction
-        self.head_type = head_type
-        embed_dim = self.config.embed_dim
-        
-        # Bigwig head (NTv3 outputs at single-nucleotide resolution)
-        self.bigwig_head = build_bigwig_head(head_type, embed_dim, num_tracks)
-        self.model_name = model_name
-    
-    def forward(self, input_embeds: torch.Tensor, return_logits_direct: bool = False, **kwargs) -> Dict[str, Optional[Union[torch.Tensor, np.ndarray]]]:
-        
-        # Forward through backbone
+        input_embeds: torch.Tensor,
+        return_logits_direct: bool = False,
+        **kwargs,
+    ) -> Union[Dict[str, Optional[Union[torch.Tensor, np.ndarray]]], Any]:
+
         outputs = self.backbone(
             input_ids=None,
             inputs_embeds=input_embeds,
@@ -204,19 +179,49 @@ class HFModelWithHead_Saliency(nn.Module):
         if return_logits_direct:
             return outputs
 
-        embedding = outputs.hidden_states[-1]  # Last hidden state
+        embedding = outputs.hidden_states[-1]
+        return self._run_head(embedding)
+
+    def forward(
+        self,
+        tokens: Optional[torch.Tensor] = None,
+        input_embeds: Optional[torch.Tensor] = None,
+        mode: str = "infer",
+        return_logits_direct: bool = False,
+        return_dict: bool = True,
+        **kwargs,
+    ) -> Union[Dict[str, Optional[Union[torch.Tensor, np.ndarray]]], Any]:
+        """Unified inference entry.
+
+        mode='infer': pass tokens; returns bigwig head outputs by default, or raw
+            backbone outputs when return_logits_direct=True (attentions, MLM logits).
+        mode='saliency': pass input_embeds; returns bigwig head outputs for gradient flow.
+        """
+        if mode == "saliency":
+            if input_embeds is None:
+                raise ValueError("mode='saliency' requires input_embeds.")
+            return self.forward_saliency(
+                input_embeds,
+                return_logits_direct=return_logits_direct,
+                **kwargs,
+            )
+
+        if mode != "infer":
+            raise ValueError(f"Invalid mode: {mode!r}. Choose 'infer' or 'saliency'.")
+
+        if tokens is None:
+            raise ValueError("mode='infer' requires tokens.")
         
-        # Crop to center fraction
-        if self.keep_target_center_fraction < 1.0:
-            embedding = crop_center(embedding, self.keep_target_center_fraction)
-        
-        # Predict bigwig tracks
-        bigwig_logits = self.bigwig_head(embedding)
-        
-        return {
-            "embedding": embedding,
-            "bigwig_tracks_logits": bigwig_logits
-        }
+        return self.forward_infer(
+            tokens,
+            return_logits_direct=return_logits_direct,
+            return_dict=return_dict,
+            **kwargs,
+        )
+
+
+# Backward-compatible alias; saliency uses forward_saliency on HFModelWithHead_Infer.
+HFModelWithHead_Saliency = HFModelWithHead_Infer
 
 
 class SaliencyComputer:
@@ -302,7 +307,10 @@ class SaliencyComputer:
         ).unsqueeze(0)
 
         # Forward pass with inputs_embeds (NOT input_ids - model requires exactly one)
-        outputs = self.model(input_embeds=inputs_embeds)
+        outputs = self.model(
+            input_embeds=inputs_embeds,
+            mode="saliency",
+        )
 
         # Access bigwig logits using attribute-style access
         logits = outputs['bigwig_tracks_logits']

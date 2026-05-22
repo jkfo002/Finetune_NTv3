@@ -94,8 +94,13 @@ for idx, batch in tqdm(enumerate(infer_dataloader), desc="Inference", total=len(
 
     with autocast(device_type="cuda", dtype=torch.bfloat16):
         with torch.no_grad():
-            outputs = model(tokens, return_dict=True)
-            logits = outputs['bigwig_tracks_logits'].detach().cpu().numpy()
+            outputs = model(
+                tokens=tokens,
+                mode="infer",
+                return_dict=True,
+                return_logits_direct=False,
+            )
+            logits = outputs["bigwig_tracks_logits"].detach().cpu().numpy()
 
     # calculate PCC
     metrics.update(outputs['bigwig_tracks_logits'], bigwig_targets)

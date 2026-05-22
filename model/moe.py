@@ -120,30 +120,33 @@ class MoEHeadBase(nn.Module):
         self,
         x: torch.Tensor,
         router_logits: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         probs = F.softmax(router_logits, dim=-1)
         expert_outputs = torch.stack(
             [expert(x) for expert in self.experts],
             dim=-2,
         )
 
+        topk_probs, topk_idx = probs.topk(self.top_k, dim=-1)
+
         if self.routing == "soft":
             combined = (probs.unsqueeze(-1) * expert_outputs).sum(dim=-2)
-            return combined, probs
+            return combined, probs, topk_idx, topk_probs
 
-        topk_probs, topk_idx = probs.topk(self.top_k, dim=-1)
-        topk_probs = topk_probs / topk_probs.sum(dim=-1, keepdim=True).clamp(min=1e-9)
+        topk_weights = topk_probs / topk_probs.sum(dim=-1, keepdim=True).clamp(min=1e-9)
         gather_idx = topk_idx.unsqueeze(-1).expand(-1, -1, -1, self.num_labels)
         selected = torch.gather(expert_outputs, dim=-2, index=gather_idx)
-        combined = (topk_probs.unsqueeze(-1) * selected).sum(dim=-2)
-        return combined, probs
+        combined = (topk_weights.unsqueeze(-1) * selected).sum(dim=-2)
+        return combined, probs, topk_idx, topk_probs
 
     def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         x = self.layer_norm(x)
         router_logits = self.router(x)
-        combined, router_probs = self._combine_experts(x, router_logits)
+        combined, router_probs, topk_idx, topk_probs = self._combine_experts(x, router_logits)
         return {
             "logits": F.softplus(combined),
+            "topk_idx": topk_idx,
+            "topk_probs": topk_probs,
             "router_logits": router_logits,
             "router_probs": router_probs,
         }
@@ -178,6 +181,8 @@ def _forward_moe_head(
     return {
         "embedding": embedding,
         "bigwig_tracks_logits": head_out["logits"],
+        "topk_idx": head_out["topk_idx"],
+        "topk_probs": head_out["topk_probs"],
         "router_logits": head_out["router_logits"],
         "router_probs": head_out["router_probs"],
     }
@@ -225,7 +230,7 @@ class HFModelWithMoE(nn.Module):
 
 
 class HFModelWithMoE_Infer(nn.Module):
-    """HF backbone + MoE head for inference."""
+    """HF backbone + MoE head for inference (same forward API as HFModelWithHead_Infer)."""
 
     def __init__(
         self,
@@ -251,23 +256,88 @@ class HFModelWithMoE_Infer(nn.Module):
         self.bigwig_head = build_moe_head(embed_dim, num_tracks, moe_config)
         self.model_name = model_name
 
-    def forward(
+    def _run_head(
+        self,
+        embedding: torch.Tensor,
+    ) -> Dict[str, Optional[Union[torch.Tensor, np.ndarray]]]:
+        if self.keep_target_center_fraction < 1.0:
+            embedding = crop_center(embedding, self.keep_target_center_fraction)
+        return _forward_moe_head(self, embedding)
+
+    def forward_infer(
         self,
         tokens: torch.Tensor,
         return_logits_direct: bool = False,
+        return_dict: bool = True,
         **kwargs,
-    ) -> Dict[str, Optional[Union[torch.Tensor, np.ndarray]]]:
+    ) -> Union[Dict[str, Optional[Union[torch.Tensor, np.ndarray]]], Any]:
+        return_dict = kwargs.pop("return_dict", return_dict)
         outputs = self.backbone(
             input_ids=tokens,
             output_hidden_states=True,
             output_attentions=True,
-            return_dict=True,
+            return_dict=return_dict,
+            **kwargs,
         )
         if return_logits_direct:
             return outputs
 
         embedding = outputs.hidden_states[-1]
-        if self.keep_target_center_fraction < 1.0:
-            embedding = crop_center(embedding, self.keep_target_center_fraction)
+        return self._run_head(embedding)
 
-        return _forward_moe_head(self, embedding)
+    def forward_saliency(
+        self,
+        input_embeds: torch.Tensor,
+        return_logits_direct: bool = False,
+        **kwargs,
+    ) -> Union[Dict[str, Optional[Union[torch.Tensor, np.ndarray]]], Any]:
+        outputs = self.backbone(
+            input_ids=None,
+            inputs_embeds=input_embeds,
+            output_hidden_states=True,
+            output_attentions=True,
+            return_dict=True,
+            **kwargs,
+        )
+        if return_logits_direct:
+            return outputs
+
+        embedding = outputs.hidden_states[-1]
+        return self._run_head(embedding)
+
+    def forward(
+        self,
+        tokens: Optional[torch.Tensor] = None,
+        input_embeds: Optional[torch.Tensor] = None,
+        mode: str = "infer",
+        return_logits_direct: bool = False,
+        return_dict: bool = True,
+        **kwargs,
+    ) -> Union[Dict[str, Optional[Union[torch.Tensor, np.ndarray]]], Any]:
+        """Unified inference entry (compatible with HFModelWithHead_Infer).
+
+        mode='infer': pass tokens; returns MoE head outputs by default, or raw
+            backbone outputs when return_logits_direct=True (attentions, MLM logits).
+        mode='saliency': pass input_embeds; returns MoE head outputs for gradient flow.
+        """
+        if mode == "saliency":
+            if input_embeds is None:
+                raise ValueError("mode='saliency' requires input_embeds.")
+            return self.forward_saliency(
+                input_embeds,
+                return_logits_direct=return_logits_direct,
+                **kwargs,
+            )
+
+        if mode != "infer":
+            raise ValueError(f"Invalid mode: {mode!r}. Choose 'infer' or 'saliency'.")
+
+        if tokens is None:
+            raise ValueError("mode='infer' requires tokens.")
+
+        return self.forward_infer(
+            tokens,
+            return_logits_direct=return_logits_direct,
+            return_dict=return_dict,
+            **kwargs,
+        )

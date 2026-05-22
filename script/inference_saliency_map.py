@@ -1,4 +1,4 @@
-from model.head import HFModelWithHead_Saliency, SaliencyComputer
+from model.head import HFModelWithHead_Infer, SaliencyComputer
 from model.utils import (
     load_config, init_config, 
     init_model, load_ckpt_with_compile, 
@@ -26,7 +26,7 @@ from tqdm import tqdm
 
 config = load_config("config/fineturn_my.toml")
 config = init_config(config)
-model, tokenizer = init_model(config, HFModelWithHead_Saliency)
+model, tokenizer = init_model(config, HFModelWithHead_Infer)
 
 # load ckpt
 device = "cuda:1"
@@ -37,7 +37,7 @@ model.eval()
 
 # init saliency computer
 saliency_computer = SaliencyComputer(
-    model=model, # HFModelWithHead_Saliency
+    model=model,
     tokenizer=tokenizer,
     sequence_length=config["sequence_length"],
     track_indices=None,
