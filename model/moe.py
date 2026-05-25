@@ -215,6 +215,33 @@ class HFModelWithMoE(nn.Module):
         self.bigwig_head = build_moe_head(embed_dim, num_tracks, moe_config)
         self.model_name = model_name
 
+    def set_backbone_trainable(self, trainable: bool) -> None:
+        for param in self.backbone.parameters():
+            param.requires_grad = trainable
+
+    def set_moe_head_trainable(self, *, router_only: bool = False) -> None:
+        head = self.bigwig_head
+        for param in head.layer_norm.parameters():
+            param.requires_grad = not router_only
+        for param in head.router.parameters():
+            param.requires_grad = True
+        for expert in head.experts:
+            for param in expert.parameters():
+                param.requires_grad = not router_only
+
+    def iter_trainable_param_groups(
+        self,
+        head_lr: float,
+        backbone_lr: float,
+    ):
+        head_params = [p for p in self.bigwig_head.parameters() if p.requires_grad]
+        if head_params:
+            yield {"params": head_params, "lr": head_lr}
+
+        backbone_params = [p for p in self.backbone.parameters() if p.requires_grad]
+        if backbone_params:
+            yield {"params": backbone_params, "lr": backbone_lr}
+
     def forward(
         self,
         tokens: torch.Tensor,

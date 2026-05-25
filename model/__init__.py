@@ -1,6 +1,6 @@
 """Finetune NTv3 model package."""
 
-from .analysis import visualization_channels, visualization_channels_means
+from .analysis import visualization_channels, visualization_channels_means, plot_moe_expert_routing
 from .backbone import MyDataModule, MyDataModule_NTv3, MyModel, MyModelMOE
 from .dataset import (
     GenomeBigWigDataset,
@@ -48,6 +48,7 @@ __all__ = [
     # analysis
     "visualization_channels",
     "visualization_channels_means",
+    "plot_moe_expert_routing",
     # backbone
     "MyDataModule",
     "MyDataModule_NTv3",

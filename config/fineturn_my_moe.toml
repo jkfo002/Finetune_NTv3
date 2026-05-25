@@ -42,6 +42,12 @@ learning_rate = 5e-6
 weight_decay = 0.001
 ## training set
 freeze_backbone = false
+## MoE staged training (moe_warmup_epochs=0 → same as LinearHead: full model + cosine)
+## Phase 1 (epoch 0..n-1): freeze backbone, constant head_learning_rate, no LR decay
+## Phase 2 (epoch n+): joint finetune all params, CosineAnnealingLR on remaining steps
+moe_warmup_epochs = 3
+moe_warmup_router_only = false
+head_learning_rate = 5e-6
 batch_size = 4
 max_steps = 75000
 log_every_n_steps = 50
