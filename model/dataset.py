@@ -459,3 +459,71 @@ class GenomeBigWigDataset_Nucl_Depend(Dataset):
         }
 
         return sample
+
+
+class GenomeBigWigMaskISMDataset(Dataset):
+    """Build N-masked sequence variants for ISM over a fixed genomic window.
+
+    Each item is one masked variant. The unmasked reference sequence should be
+    inferred separately by the calling script. ``mask_windows`` are 0-based
+    half-open intervals relative to the loaded region sequence.
+    """
+
+    def __init__(
+        self,
+        fasta_path: str,
+        chrom: str,
+        region_start: int,
+        region_end: int,
+        mask_windows: List[tuple[int, int]],
+        sequence_length: int,
+        tokenizer: AutoTokenizer,
+    ):
+        super().__init__()
+        self.fasta_path = fasta_path
+        self.chrom = chrom
+        self.region_start = int(region_start)
+        self.region_end = int(region_end)
+        self.mask_windows = [(int(s), int(e)) for s, e in mask_windows]
+        self.sequence_length = int(sequence_length)
+        self.tokenizer = tokenizer
+
+        seq = _get_fasta_handle(self.fasta_path)[chrom][region_start - 1 : region_end - 1]
+        if isinstance(seq, (bytes, bytearray)):
+            self.base_sequence = seq.decode("ascii").upper()
+        else:
+            self.base_sequence = str(seq).upper()
+
+        seq_len = len(self.base_sequence)
+        for start, end in self.mask_windows:
+            if start < 0 or end > seq_len or start >= end:
+                raise ValueError(
+                    f"Invalid mask window [{start}, {end}) for region sequence length {seq_len}."
+                )
+
+    def __len__(self) -> int:
+        return len(self.mask_windows)
+
+    @staticmethod
+    def mask_with_n(sequence: str, start: int, end: int) -> str:
+        chars = list(sequence)
+        for idx in range(start, end):
+            chars[idx] = "N"
+        return "".join(chars)
+
+    def __getitem__(self, idx: int) -> Dict[str, Union[torch.Tensor, int]]:
+        mask_start, mask_end = self.mask_windows[idx]
+        seq = self.mask_with_n(self.base_sequence, mask_start, mask_end)
+        tokenized = self.tokenizer(
+            seq,
+            padding="max_length",
+            truncation=True,
+            max_length=self.sequence_length,
+            return_tensors="pt",
+        )
+        return {
+            "tokens": tokenized["input_ids"][0],
+            "window_idx": idx,
+            "mask_start": mask_start,
+            "mask_end": mask_end,
+        }

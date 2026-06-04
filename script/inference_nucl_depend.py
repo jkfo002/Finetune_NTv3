@@ -1,6 +1,7 @@
 from model.head import HFModelWithHead_Infer
+from model.moe import HFModelWithMoE_Infer
 from model.dataset import GenomeBigWigDataset_Nucl_Depend
-from model.utils import load_Data, transform_fn, load_config, init_config, init_model, load_ckpt_with_compile
+from model.utils import load_Data, transform_fn, load_config, init_config, init_model, init_moe_model, load_ckpt_with_compile
 from model.decorator import NUC_CONFIG
 
 import torch
@@ -107,7 +108,10 @@ NUC_TAB = NUC_CONFIG.NUC_TAB
 ACGT_IDX = NUC_CONFIG.ACGT_IDX
 config = load_config("config/fineturn_my.toml")
 config = init_config(config)
-model, tokenizer = init_model(config, HFModelWithHead_Infer)
+if config.get("use_moe", False):
+    model, tokenizer = init_moe_model(config, HFModelWithMoE_Infer)
+else:
+    model, tokenizer = init_model(config, HFModelWithHead_Infer)
 
 # load ckpt
 device = "cuda:1"

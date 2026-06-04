@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Visualize MoE expert routing (topk_idx) at nucleotide resolution.",
     )
-    parser.add_argument("--config", default="fineturn_my_moe.toml", help="MoE TOML config.")
+    parser.add_argument("--config", default="fineturn_my_moe.toml", help="MoE TOML config when training.")
     parser.add_argument("--ckpt", required=True, help="Lightning checkpoint or .pth path.")
     parser.add_argument("--output-dir", required=True, help="Directory for outputs.")
     parser.add_argument("--device", default=None, help="Torch device (default: cuda if available).")
@@ -68,17 +68,6 @@ def crop_center_sequence(seq: str, keep_target_center_fraction: float) -> tuple[
     return seq[target_offset : target_offset + target_length], target_offset
 
 
-def build_expert_names(moe_config: dict[str, Any]) -> list[str]:
-    experts = moe_config.get("experts", [])
-    if not experts:
-        num_experts = moe_config["num_experts"]
-        return [f"expert_{i}" for i in range(num_experts)]
-    names = [""] * len(experts)
-    for item in experts:
-        names[item["id"]] = item.get("name", f"expert_{item['id']}")
-    return names
-
-
 def region_prefix(chrom: str, region_start: int, region_end: int) -> str:
     chrom_safe = str(chrom).replace("/", "_")
     return f"{chrom_safe}_{region_start}_{region_end}"
@@ -102,7 +91,6 @@ def build_routing_table(
     bases: str,
     region_start: int,
     crop_offset: int,
-    expert_names: list[str],
 ) -> pd.DataFrame:
     seq_len, top_k = topk_idx.shape
     if len(bases) != seq_len:
@@ -118,12 +106,20 @@ def build_routing_table(
 
     for rank in range(top_k):
         data[f"top{rank + 1}_idx"] = topk_idx[:, rank].astype(np.int64)
-        data[f"top{rank + 1}_name"] = [
-            expert_names[int(idx)] for idx in topk_idx[:, rank]
-        ]
         data[f"top{rank + 1}_prob"] = topk_probs[:, rank].astype(np.float64)
 
     return pd.DataFrame(data)
+
+
+def _num_experts_from_routing(
+    topk_idx: np.ndarray,
+    router_probs: np.ndarray | None = None,
+) -> int:
+    if router_probs is not None:
+        if router_probs.ndim == 2:
+            return int(router_probs.shape[1])
+        return int(router_probs.shape[0])
+    return int(topk_idx.max()) + 1
 
 
 def export_region_outputs(
@@ -132,7 +128,6 @@ def export_region_outputs(
     topk_idx: np.ndarray,
     topk_probs: np.ndarray,
     routing_df: pd.DataFrame,
-    expert_names: list[str],
     *,
     router_probs: np.ndarray | None = None,
     plot: bool = True,
@@ -149,9 +144,11 @@ def export_region_outputs(
         np.save(region_dir / f"{region_id}_router_probs.npy", router_probs.astype(np.float32))
 
     if plot:
+        num_experts = _num_experts_from_routing(topk_idx, router_probs)
+        expert_labels = [str(i) for i in range(num_experts)]
         plot_moe_expert_routing(
             topk_idx,
-            expert_names,
+            expert_labels,
             topk_probs=topk_probs,
             router_probs=router_probs,
             region_label=region_id,
@@ -164,17 +161,20 @@ def export_region_outputs(
         "region_id": region_id,
         "seq_len": int(topk_idx.shape[0]),
         "top_k": int(topk_idx.shape[1]),
-        "top1_expert_counts": {expert_names[k]: v for k, v in sorted(top1_counts.items())},
+        "top1_expert_counts": {int(k): v for k, v in sorted(top1_counts.items())},
     }
 
 
 def main() -> None:
     args = parse_args()
     config = init_config(load_config(args.config))
-    moe_config = load_moe_config(config["moe_config_path"])
-    config["moe_config"] = moe_config
-    expert_names = build_expert_names(moe_config)
+    if config.get("moe_config") is not None:
+        with open(config["moe_config_path"], "r") as f:
+            moe_config = json.load(f)
+    else:
+        raise ValueError("MoE config not found in config file.")
 
+    # load model
     device = resolve_device(args.device)
     model, tokenizer = init_moe_model(config, HFModelWithMoE_Infer)
     model = load_ckpt_with_compile(
@@ -187,6 +187,7 @@ def main() -> None:
     model = model.to(device)
     model.eval()
 
+    # load data
     gene_bed_path = os.path.join(config["training_data_dir"], config["gene_bed"])
     gene_bed = pd.read_csv(
         gene_bed_path,
@@ -203,6 +204,7 @@ def main() -> None:
     elif args.limit_regions is not None:
         infer_bed = infer_bed.iloc[: args.limit_regions].reset_index(drop=True)
 
+    # build dataset and dataloader
     num_workers = args.num_workers if args.num_workers is not None else config.get("num_workers", 4)
     infer_dataset = GenomeBigWigDataset(
         fasta_path=config["fasta_path"],
@@ -224,6 +226,7 @@ def main() -> None:
         num_workers=num_workers,
     )
 
+    # build output directory
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -264,6 +267,7 @@ def main() -> None:
 
             cropped_seq, crop_offset = crop_center_sequence(raw_seq, keep_fraction)
             if len(cropped_seq) != topk_idx.shape[0]:
+                """长度不等的时候的处理"""
                 if len(cropped_seq) > topk_idx.shape[0]:
                     cropped_seq = cropped_seq[: topk_idx.shape[0]]
                 else:
@@ -274,8 +278,7 @@ def main() -> None:
                 topk_probs,
                 cropped_seq,
                 region_start,
-                crop_offset,
-                expert_names,
+                crop_offset
             )
 
             summary = export_region_outputs(
@@ -284,14 +287,13 @@ def main() -> None:
                 topk_idx,
                 topk_probs,
                 routing_df,
-                expert_names,
                 router_probs=router_probs,
                 plot=not args.no_plot,
                 downsample=args.downsample,
             )
             region_summaries.append(summary)
-            for expert, count in summary["top1_expert_counts"].items():
-                global_top1[expert] += count
+            for expert_id, count in summary["top1_expert_counts"].items():
+                global_top1[expert_id] += count
 
     summary_payload = {
         "num_regions": len(region_summaries),

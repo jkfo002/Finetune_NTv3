@@ -3,7 +3,7 @@ from torch.utils.data import Dataset
 import numpy as np
 import matplotlib.pyplot as plt
 
-def visualization_channels(targets, preds, save_path=None, channels=None):
+def visualization_channels(targets, preds, save_path=None, channels=None, ylim=None):
     """
     targets: (1, len, channels)
     preds: (1, len, channels)
@@ -54,6 +54,10 @@ def visualization_channels(targets, preds, save_path=None, channels=None):
                         transform=plt.gca().transAxes,
                         fontsize=10, color='black')
 
+    if ylim is not None:
+        for ax in plt.gcf().axes:
+            ax.set_ylim(ylim)
+
     if save_path is not None:
         plt.savefig(save_path, dpi=300)
     else:
@@ -61,7 +65,12 @@ def visualization_channels(targets, preds, save_path=None, channels=None):
     plt.close()
 
 def visualization_channels_means(
-    targets:np.ndarray, preds:np.ndarray, mean_order:dict, save_path=None, channels=None
+    targets: np.ndarray,
+    preds: np.ndarray,
+    mean_order: dict,
+    save_path=None,
+    channels=None,
+    ylim=None,
 ):
     """
     means the replication within both target and pred channels
@@ -84,7 +93,7 @@ def visualization_channels_means(
         mean_target[:, :, i] = targets[:, :, select_channel].mean(axis=-1)
         mean_pred[:, :, i] = preds[:, :, select_channel].mean(axis=-1)
 
-    visualization_channels(mean_target, mean_pred, save_path, channels)
+    visualization_channels(mean_target, mean_pred, save_path, channels, ylim=ylim)
 
 
 EXPERT_CMAP_COLORS = [

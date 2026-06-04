@@ -2,7 +2,8 @@ from model.dataset import GenomeBigWigDataset
 from model.utils import load_Data, transform_fn
 from model.decorator import NUC_CONFIG
 from model.head import HFModelWithHead_Infer
-from model.utils import load_config, init_config, init_model, load_ckpt_with_compile
+from model.moe import HFModelWithMoE_Infer
+from model.utils import load_config, init_config, init_model, init_moe_model, load_ckpt_with_compile
 
 import torch
 from torch import nn
@@ -335,7 +336,10 @@ def plot_attention_panel(mat, filename=None, *, cmap="Blues", vmin=0.0001,
 layer_index = -1  # Last layer
 config = load_config("config/fineturn_my.toml")
 config = init_config(config)
-model, tokenizer = init_model(config, HFModelWithHead_Infer)
+if config.get("use_moe", False):
+    model, tokenizer = init_moe_model(config, HFModelWithMoE_Infer)
+else:
+    model, tokenizer = init_model(config, HFModelWithHead_Infer)
 
 # load ckpt
 device = "cuda:1"
