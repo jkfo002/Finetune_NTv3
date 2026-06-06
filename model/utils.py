@@ -221,10 +221,14 @@ def load_ckpt_with_compile(
     for k, v in state_dict.items():
         if k.startswith(prefix_in_lightning):
             new_k = k[len(prefix_in_lightning):]  # 去掉 "model." 前缀
-            if compile: 
+            if compile:
                 if "_orig_mod." in new_k: # 模型训练过程中使用torch.compile会在ckpt的权重文件中增加_orig_mod 需要去掉 否则无法加载
                     new_k = new_k.replace("_orig_mod.", "")
-                
+
+            # 跳过 RoPE 缓存（训练时缓存，推理时动态计算）
+            if "rotary_embedding.cos_cached" in new_k or "rotary_embedding.sin_cached" in new_k:
+                continue
+
             new_state_dict[new_k] = v
         else:
             # 可能还有其他非 model 的参数（如 loss_fn 等），跳过

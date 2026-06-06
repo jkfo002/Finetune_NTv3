@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Sequence, Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -24,7 +24,7 @@ from common import (
     build_delta_pairs,
     build_score_groups,
     ensure_dir,
-    load_gene_regions_from_config,
+    load_regions,
     load_mask_intervals_json,
     load_model_for_inference,
     load_project_config,
@@ -68,9 +68,10 @@ def resolve_mask_windows(
     scheme: str,
     *,
     seq_length: int,
+    strand: str,
     region_start_genome: int,
-    scan_start: int,
-    scan_end: int,
+    scan_uplen: int,
+    scan_downlen: int,
     window_size: int,
     window_step: int,
     max_windows: int | None,
@@ -79,8 +80,10 @@ def resolve_mask_windows(
 ) -> List[Tuple[int, int]]:
     if scheme == "sliding":
         return sliding_mask_windows(
-            scan_start,
-            scan_end,
+            seq_length,
+            strand,
+            scan_uplen,
+            scan_downlen,
             window_size,
             window_step,
             max_windows=max_windows,
@@ -262,18 +265,49 @@ def run_region_ism(
     }
     return overall_rows, track_rows, group_rows, delta_rows, region_meta
 
+def load_regions_strand(
+    config: Mapping[str, Any],
+    *,
+    bed_path: Optional[str | Path] = None,
+    limit: Optional[int] = None,
+) -> pd.DataFrame:
+    """
+    Load regions from BED file, 
+    add gene strand message for ism_scan
+    """
+    import pyfaidx
+    import os
+    from model.utils import load_Data
+
+    if bed_path is not None:
+        bed_file = str(bed_path)
+    else:
+        bed_file = str(config["gene_bed"])
+        if not os.path.isabs(bed_file):
+            bed_file = os.path.join(str(config["training_data_dir"]), bed_file)
+
+    df = pd.read_csv(bed_file, sep="\t", header=None, names=["chrom", "start", "end", "id", "type", "strand"])
+    faidx = pyfaidx.Fasta(str(config["fasta_path"]))
+    try:
+        regions = load_Data(df, faidx, int(config["TSS_up"]), int(config["TSS_down"]))
+    finally:
+        faidx.close()
+    if limit is not None:
+        regions = regions.iloc[:limit].copy()
+    return regions.reset_index(drop=True)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     add_model_args(parser)
     add_track_args(parser)
+    parser.add_argument("--regions-bed", default=None, help="Optional BED regions. Defaults to config gene_bed.")
     parser.add_argument("--output-dir", default="results/ism")
     parser.add_argument(
         "--ism-scheme", choices=["sliding", "fixed"], required=True, 
         help="ISM scan scheme. sliding: slide a fixed-length window with step `s` inside `[scan_start, scan_end)`, replace window with `N`. fixed: use predefined intervals from `--mask-intervals-json`."
     )
-    parser.add_argument("--scan-start", type=int, default=0, help="Sliding scheme: scan interval start within region.")
-    parser.add_argument("--scan-end", type=int, default=None, help="Sliding scheme: scan interval end within region.")
+    parser.add_argument("--scan-TSS-up", type=int, default=0, help="Sliding scheme: TSS upstream distance.")
+    parser.add_argument("--scan-TSS-down", type=int, default=None, help="Sliding scheme: TSS downstream distance.")
     parser.add_argument("--window-size", type=int, default=200, help="Sliding scheme: N-mask window length.")
     parser.add_argument("--window-step", type=int, default=100, help="Sliding scheme: step between windows.")
     parser.add_argument(
@@ -316,7 +350,6 @@ def main() -> None:
     score_groups = build_score_groups(design)
     delta_pairs = build_delta_pairs(design, baseline, infection)
     sequence_length = int(config["sequence_length"])
-    scan_end = int(args.scan_end) if args.scan_end is not None else sequence_length
 
     # model checks
     fixed_intervals = None
@@ -325,11 +358,6 @@ def main() -> None:
             raise ValueError("Fixed ISM scheme requires --mask-intervals-json.")
         fixed_intervals = load_mask_intervals_json(args.mask_intervals_json)
     elif args.ism_scheme == "sliding":
-        if args.scan_start < 0 or scan_end > sequence_length or args.scan_start >= scan_end:
-            raise ValueError(
-                f"Sliding scan interval must satisfy 0 <= scan_start < scan_end <= {sequence_length}, "
-                f"got [{args.scan_start}, {scan_end})."
-            )
         if args.window_size <= 0:
             raise ValueError(f"Sliding window size must be positive, got {args.window_size}.")
         if args.window_step <= 0:
@@ -347,7 +375,11 @@ def main() -> None:
         compile_model=args.compile_model,
         strict=args.strict,
     )
-    regions = load_gene_regions_from_config(config, limit=args.limit_regions)
+    if args.regions_bed is None:
+        print(f"Trying to load region bed from config toml {args.config['gene_bed']}")
+        if args.config['gene_bed'] is None:
+            raise ValueError(f"No region were detected from both {args.regions_bed} and {args.config}")
+    regions = load_regions_strand(config, bed_path=args.regions_bed, limit=args.limit_regions)
 
     overall_rows: List[Dict[str, Any]] = []
     track_rows: List[Dict[str, Any]] = []
@@ -356,15 +388,19 @@ def main() -> None:
     region_metadata: List[Dict[str, Any]] = []
 
     for region_index, row in tqdm(regions.iterrows(), total=len(regions), desc="ISM regions"):
+        
         region_id = str(row["id"])
         seq_len = int(row["region_end"]) - int(row["region_start"])
         region_start_genome = int(row["region_start"]) - 1
+        assert row["strand"] in ["+", "-"], f"Invalid strand: {row['strand']}"
+
         mask_windows = resolve_mask_windows(
             args.ism_scheme,
             seq_length=seq_len,
             region_start_genome=region_start_genome,
-            scan_start=args.scan_start,
-            scan_end=min(scan_end, seq_len),
+            strand=row["strand"],
+            scan_uplen=args.scan_TSS_up,
+            scan_downlen=args.scan_TSS_down,
             window_size=args.window_size,
             window_step=args.window_step,
             max_windows=args.max_windows,
@@ -407,8 +443,8 @@ def main() -> None:
             "atac_baseline_timepoint": baseline,
             "atac_infection_timepoints": infection,
             "ism_scheme": args.ism_scheme,
-            "scan_start": args.scan_start,
-            "scan_end": scan_end,
+            "scan_TSS_up": args.scan_TSS_up,
+            "scan_TSS_down": args.scan_TSS_down,
             "window_size": args.window_size,
             "window_step": args.window_step,
             "mask_intervals_json": args.mask_intervals_json,

@@ -3,56 +3,52 @@ from torch.utils.data import Dataset
 import numpy as np
 import matplotlib.pyplot as plt
 
-def visualization_channels(targets, preds, save_path=None, channels=None, ylim=None):
+def visualization_channels(targets, preds, save_path=None, channels=None, ylim=None, channel_names=None):
     """
     targets: (1, len, channels)
     preds: (1, len, channels)
+    channel_names: optional list of names for each channel; if None, use sequential numbering.
     """
     assert targets.shape == preds.shape, "targets and preds must have the same shape"
     assert targets.shape[0] == 1, "targets and preds must have batch size of 1"
     assert preds.shape[0] == 1, "targets and preds must have batch size of 1"
-    
+
     if channels is None:
-
-        plt.figure(figsize=(15, 4 * targets.shape[-1]))        
-        for i in range(targets.shape[-1]):
-
-            plot_target = targets.squeeze(0)[:, i] # (len)
-            # plot_target = normaliztion(plot_target) # z-score the targe
-            plot_pred = preds.squeeze(0)[:, i] # (len)
-            # plot_pred = normaliztion(plot_pred) # z-score the pred  
-
-            plt.subplot(targets.shape[-1]*2, 1, i*2+1)
-            plt.plot(plot_target, color="#779a92")
-            plt.gca().text(0.05, 0.9, f'Target channel {i+1}',
-                        transform=plt.gca().transAxes,
-                        fontsize=10, color='#9aadbe')
-            plt.subplot(targets.shape[-1]*2, 1, i*2+2)
-            plt.plot(plot_pred, color="#9aadbe")
-            plt.gca().text(0.05, 0.9, f'Pred channel {i+1}',
-                        transform=plt.gca().transAxes,
-                        fontsize=10, color='#9aadbe')
+        num_panels = targets.shape[-1]
+        indices = list(range(num_panels))
     else:
+        num_panels = len(channels)
+        indices = list(channels)
 
-        plt.figure(figsize=(15, 4 * len(channels)))        
-        for i in range(len(channels)):
+    if channel_names is None:
+        channel_names = [f"channel {i + 1}" for i in range(num_panels)]
+    else:
+        channel_names = list(channel_names)
+        if len(channel_names) != num_panels:
+            raise ValueError(
+                f"channel_names length ({len(channel_names)}) must match number of panels ({num_panels})"
+            )
 
-            plot_target = targets.squeeze(0)[:, channels[i]] # (len)
-            # plot_target = normaliztion(plot_target) # z-score the targe
-            plot_pred = preds.squeeze(0)[:, channels[i]] # (len)
-            # plot_pred = normaliztion(plot_pred) # z-score the pred
+    plt.figure(figsize=(15, 4 * num_panels))
+    for i, idx in enumerate(indices):
+        plot_target = targets.squeeze(0)[:, idx]
+        plot_pred = preds.squeeze(0)[:, idx]
 
-            plt.subplot(len(channels)*2, 1, i*2+1)
-            plt.plot(plot_target, color="#779a92")
-            plt.gca().text(0.05, 0.9, f'Target channel {channels + 1}',
-                        transform=plt.gca().transAxes,
-                        fontsize=10, color='black')
-            plt.subplot(len(channels)*2, 1, i*2+2)
+        plt.subplot(num_panels * 2, 1, i * 2 + 1)
+        plt.plot(plot_target, color="#779a92")
+        plt.gca().text(
+            0.05, 0.9, f"Target {channel_names[i]}",
+            transform=plt.gca().transAxes,
+            fontsize=10, color="#9aadbe",
+        )
 
-            plt.plot(plot_pred, color="#9aadbe")
-            plt.gca().text(0.05, 0.9, f'Pred channel {channels + 1}',
-                        transform=plt.gca().transAxes,
-                        fontsize=10, color='black')
+        plt.subplot(num_panels * 2, 1, i * 2 + 2)
+        plt.plot(plot_pred, color="#9aadbe")
+        plt.gca().text(
+            0.05, 0.9, f"Pred {channel_names[i]}",
+            transform=plt.gca().transAxes,
+            fontsize=10, color="#9aadbe",
+        )
 
     if ylim is not None:
         for ax in plt.gcf().axes:
@@ -92,8 +88,7 @@ def visualization_channels_means(
         select_channel = mean_order[mc]
         mean_target[:, :, i] = targets[:, :, select_channel].mean(axis=-1)
         mean_pred[:, :, i] = preds[:, :, select_channel].mean(axis=-1)
-
-    visualization_channels(mean_target, mean_pred, save_path, channels, ylim=ylim)
+    visualization_channels(mean_target, mean_pred, save_path, channels, ylim=ylim, channel_names=mean_channels)
 
 
 EXPERT_CMAP_COLORS = [

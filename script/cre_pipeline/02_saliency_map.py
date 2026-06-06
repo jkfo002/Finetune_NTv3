@@ -17,8 +17,7 @@ from common import (
     add_track_args,
     build_score_groups,
     ensure_dir,
-    load_bed_regions,
-    load_gene_regions_from_config,
+    load_regions,
     load_model_for_inference,
     load_project_config,
     resolve_track_design,
@@ -118,7 +117,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--chunk-size", type=int, default=8000, help="Regions per saved chunk.")
     parser.add_argument(
         "--save-onehot",
-        action=argparse.BooleanOptionalAction,
+        action="store_true",
         default=True,
         help="Save one-hot embeddings alongside gradients.",
     )
@@ -157,10 +156,11 @@ def main() -> None:
         region=saliency_region,
     )
 
-    if args.regions_bed:
-        regions = load_bed_regions(args.regions_bed, limit=args.limit_regions, add_one_for_dataset=True)
-    else:
-        regions = load_gene_regions_from_config(config, limit=args.limit_regions)
+    if args.regions_bed is None:
+        print(f"Trying to load region bed from config toml {args.config['gene_bed']}")
+        if args.config['gene_bed'] is None:
+            raise ValueError(f"No region were detected from both {args.regions_bed} and {args.config}")
+    regions = load_regions(config, bed_path=args.regions_bed, limit=args.limit_regions)
 
     fasta = pyfaidx.Fasta(str(config["fasta_path"]))
     gradients_chunk: List[np.ndarray] = []

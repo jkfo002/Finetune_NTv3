@@ -58,12 +58,12 @@ def add_track_args(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="JSON/TOML mapping of timepoint to track indices. Defaults to ATAC tracks inferred from config.",
     )
-    parser.add_argument("--baseline-timepoint", default=None, help="Baseline timepoint for delta importance.")
+    parser.add_argument("--baseline-timepoint", default=None, help="Baseline timepoint for atac delta importance.")
     parser.add_argument(
         "--infection-timepoints",
         nargs="*",
         default=None,
-        help="Infection timepoints. Defaults to all non-baseline timepoints in the inferred mapping.",
+        help="Infection timepoints. Defaults to all non-baseline timepoints in the atac inferred mapping.",
     )
 
 
@@ -332,13 +332,22 @@ def build_delta_pairs(
     return pairs
 
 
-def load_gene_regions_from_config(config: Mapping[str, Any], limit: Optional[int] = None) -> pd.DataFrame:
+def load_regions(
+    config: Mapping[str, Any],
+    *,
+    bed_path: Optional[str | Path] = None,
+    limit: Optional[int] = None,
+) -> pd.DataFrame:
     import pyfaidx
 
-    gene_bed = str(config["gene_bed"])
-    if not os.path.isabs(gene_bed):
-        gene_bed = os.path.join(str(config["training_data_dir"]), gene_bed)
-    df = pd.read_csv(gene_bed, sep="\t", header=None, names=["chrom", "start", "end", "id", "type"])
+    if bed_path is not None:
+        bed_file = str(bed_path)
+    else:
+        bed_file = str(config["gene_bed"])
+        if not os.path.isabs(bed_file):
+            bed_file = os.path.join(str(config["training_data_dir"]), bed_file)
+
+    df = pd.read_csv(bed_file, sep="\t", header=None, names=["chrom", "start", "end", "id", "type"])
     faidx = pyfaidx.Fasta(str(config["fasta_path"]))
     try:
         regions = load_Data(df, faidx, int(config["TSS_up"]), int(config["TSS_down"]))
@@ -347,30 +356,6 @@ def load_gene_regions_from_config(config: Mapping[str, Any], limit: Optional[int
     if limit is not None:
         regions = regions.iloc[:limit].copy()
     return regions.reset_index(drop=True)
-
-
-def load_bed_regions(
-    bed_path: str | Path,
-    *,
-    limit: Optional[int] = None,
-    add_one_for_dataset: bool = False,
-) -> pd.DataFrame:
-    cols = ["chrom", "start", "end", "id", "score", "strand"]
-    bed = pd.read_csv(bed_path, sep="\t", header=None, comment="#")
-    bed = bed.iloc[:, : min(bed.shape[1], len(cols))]
-    bed.columns = cols[: bed.shape[1]]
-    if "id" not in bed:
-        bed["id"] = [f"region_{i:06d}" for i in range(len(bed))]
-    if "score" not in bed:
-        bed["score"] = "."
-    bed["type"] = bed["score"].astype(str)
-    offset = 1 if add_one_for_dataset else 0
-    bed["region_start"] = bed["start"].astype(int) + offset
-    bed["region_end"] = bed["end"].astype(int) + offset
-    out = bed[["chrom", "start", "end", "id", "type", "region_start", "region_end"]].copy()
-    if limit is not None:
-        out = out.iloc[:limit].copy()
-    return out.reset_index(drop=True)
 
 
 def make_dataloader(
@@ -526,8 +511,10 @@ def iter_chunks(items: Sequence[Any], chunk_size: int) -> Iterable[Sequence[Any]
 
 
 def sliding_mask_windows(
-    scan_start: int,
-    scan_end: int,
+    seq_length: int,
+    strand: str,
+    scan_uplen: int,
+    scan_downlen: int,
     window_size: int,
     step: int,
     *,
@@ -535,15 +522,25 @@ def sliding_mask_windows(
 ) -> List[Tuple[int, int]]:
     if window_size <= 0 or step <= 0:
         raise ValueError("window_size and step must be positive.")
-    if scan_start < 0 or scan_end <= scan_start:
-        raise ValueError(f"Invalid scan interval [{scan_start}, {scan_end}).")
+    
     windows: List[Tuple[int, int]] = []
-    start = scan_start
-    while start + window_size <= scan_end:
+    TSS = seq_length // 2
+
+    if strand == "+":
+        start = TSS - scan_uplen
+        end = TSS + scan_downlen
+    elif strand == "-":
+        start = TSS - scan_downlen
+        end = TSS + scan_uplen
+    
+    assert start > 0 and end <= seq_length, f"Invalid start interval [{start}, {end})."
+    while start + window_size <= end:
         windows.append((start, start + window_size))
         if max_windows is not None and len(windows) >= max_windows:
             break
         start += step
+
+    windows = sorted(windows, key=lambda x: x[0])
     return windows
 
 

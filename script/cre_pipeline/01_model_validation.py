@@ -20,8 +20,7 @@ from common import (
     build_delta_pairs,
     build_score_groups,
     ensure_dir,
-    load_bed_regions,
-    load_gene_regions_from_config,
+    load_regions,
     load_model_for_inference,
     load_project_config,
     make_dataloader,
@@ -93,6 +92,21 @@ def region_metrics_for_sample(
     *,
     peak_target_percentile: float,
 ) -> Tuple[float, Dict[int, float], Dict[str, float], Dict[str, float], Dict[str, Optional[float]]]:
+    """计算单个 region 的预测-目标 track 相关性及分组指标。
+
+    Args:
+        pred: 模型预测值，shape (seq_len, num_tracks)
+        target: 真实目标值，shape (seq_len, num_tracks)
+        score_groups: track 分组映射，如 {"ATAC::T3": [0,1], "RNA::T3::infect": [2,3]}
+        peak_target_percentile: 用于计算 peak AUC 的目标值分位数阈值
+
+    Returns:
+        pearson_global: 所有 track 的 Pearson 相关系数均值
+        per_track: 每个 track 的 Pearson 相关系数，{track_idx: corr}
+        per_group: 每组 track 均值后的 Pearson 相关系数，{group_key: corr}
+        per_group_spearman: 每组 track 均值后的 Spearman 相关系数，{group_key: corr}
+        per_group_peak_auc: 每组 peak AUC（基于目标值分位数阈值），{group_key: auc}
+    """
     track_corr = region_pearson_per_track(pred, target)
     pearson_global = float(np.nanmean(track_corr))
 
@@ -176,17 +190,20 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+
+    # Parse args
     args = parse_args()
     output_dir = ensure_dir(args.output_dir)
     plots_dir = output_dir / "plots"
     config = load_project_config(args.config)
     design = resolve_track_design(config, args.track_map)
     score_groups = build_score_groups(design)
-    mean_order = score_groups
-    baseline, infection = resolve_atac_timepoints(design, args.baseline_timepoint, args.infection_timepoints)
-    delta_pairs = build_delta_pairs(design, baseline, infection)
+    mean_order = score_groups # for plot func 聚合 track
+    baseline, infection = resolve_atac_timepoints(design, args.baseline_timepoint, args.infection_timepoints) # resolve timepoint
+    delta_pairs = build_delta_pairs(design, baseline, infection) # build_delta
     num_tracks = int(config["num_tracks"])
 
+    # load module
     model, tokenizer, device = load_model_for_inference(
         config,
         args.ckpt,
@@ -194,11 +211,15 @@ def main() -> None:
         compile_model=args.compile_model,
         strict=args.strict,
     )
-    if args.regions_bed:
-        regions = load_bed_regions(args.regions_bed, limit=args.limit_regions, add_one_for_dataset=True)
-    else:
-        regions = load_gene_regions_from_config(config, limit=args.limit_regions)
 
+    # load region
+    if args.regions_bed is None:
+        print(f"Trying to load region bed from config toml {args.config['gene_bed']}")
+        if args.config['gene_bed'] is None:
+            raise ValueError(f"No region were detected from both {args.regions_bed} and {args.config}")
+    regions = load_regions(config, bed_path=args.regions_bed, limit=args.limit_regions)
+
+    # load dataloader
     dataloader = make_dataloader(
         config,
         tokenizer,
@@ -213,7 +234,7 @@ def main() -> None:
     region_delta_rows: List[Dict[str, Any]] = []
     plot_pool: Optional[Pool] = None
     if args.plot:
-        plot_pool = Pool(processes=max(1, int(args.plot_workers)))
+        plot_pool = Pool(processes=max(1, int(args.plot_workers))) # multiprocessing pool
 
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="Validating"):
@@ -231,6 +252,7 @@ def main() -> None:
                 pred_i = pred_cpu[i]
                 target_i = target_cpu[i]
 
+                # pearson 计算
                 pearson_global, per_track, per_group, per_group_spearman, per_group_peak_auc = region_metrics_for_sample(
                     pred_i,
                     target_i,
@@ -238,6 +260,10 @@ def main() -> None:
                     peak_target_percentile=args.peak_target_percentile,
                 )
 
+                """
+                记录 region 级指标
+                float(np.nanmean(pred_i)) 记录track聚合均值
+                """
                 region_rows.append(
                     {
                         "region_id": region_id,
@@ -250,6 +276,9 @@ def main() -> None:
                     }
                 )
 
+                """
+                记录 track 级指标
+                """
                 for track_idx, value in per_track.items():
                     region_track_rows.append(
                         {
@@ -259,6 +288,9 @@ def main() -> None:
                         }
                     )
 
+                """
+                记录 group 级指标
+                """
                 for group_key, value in per_group.items():
                     region_group_rows.append(
                         {
@@ -269,7 +301,8 @@ def main() -> None:
                             "peak_auc": per_group_peak_auc[group_key],
                         }
                     )
-
+                
+                # delta 相关性
                 for delta_key, (lhs_key, rhs_key) in delta_pairs.items():
                     lhs = score_groups.get(lhs_key, [])
                     rhs = score_groups.get(rhs_key, [])
