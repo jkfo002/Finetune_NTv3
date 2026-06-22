@@ -157,9 +157,9 @@ def plot_moe_expert_routing(
     fig, axes = plt.subplots(
         n_panels,
         1,
-        figsize=(14, fig_height),
+        figsize=(16, fig_height),
         sharex=True,
-        gridspec_kw={"height_ratios": height_ratios},
+        gridspec_kw={"height_ratios": height_ratios, "right": 0.82},
     )
     if n_panels == 1:
         axes = [axes]
@@ -175,7 +175,7 @@ def plot_moe_expert_routing(
         norm=norm,
         interpolation="nearest",
     )
-    axes[0].set_ylabel("Top-1")
+    axes[0].set_ylabel("Top-1", rotation=0, ha="right", va="center")
     axes[0].set_yticks([])
 
     for rank in range(top_k):
@@ -192,7 +192,7 @@ def plot_moe_expert_routing(
         if topk_probs is not None and topk_probs.shape[1] > rank:
             mean_prob = float(np.mean(topk_probs[:, rank]))
             prob_label = f" (mean prob={mean_prob:.3f})"
-        ax.set_ylabel(f"Rank {rank + 1}{prob_label}")
+        ax.set_ylabel(f"Rank {rank + 1}{prob_label}", rotation=0, ha="right", va="center")
         ax.set_yticks([])
 
     panel_offset = 1 + top_k
@@ -212,7 +212,7 @@ def plot_moe_expert_routing(
             vmax=max(router_plot.max(), 1e-6),
             interpolation="nearest",
         )
-        ax_router.set_ylabel("Router prob")
+        ax_router.set_ylabel("Router prob", rotation=0, ha="right", va="center")
         ax_router.set_yticks(np.arange(num_experts))
         ax_router.set_yticklabels(expert_names, fontsize=7)
         fig.colorbar(im_router, ax=ax_router, fraction=0.02, pad=0.01)
@@ -227,13 +227,15 @@ def plot_moe_expert_routing(
         Patch(facecolor=EXPERT_CMAP_COLORS[i % len(EXPERT_CMAP_COLORS)], label=name)
         for i, name in enumerate(expert_names)
     ]
-    axes[0].legend(
+    fig.legend(
         handles=legend_handles,
-        loc="upper right",
-        bbox_to_anchor=(1.0, 1.35),
-        ncol=min(4, num_experts),
-        fontsize=7,
+        loc="center left",
+        bbox_to_anchor=(0.84, 0.5),
+        ncol=1,
+        fontsize=8,
         frameon=False,
+        title="Experts",
+        title_fontsize=9,
     )
 
     fig.tight_layout()

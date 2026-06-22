@@ -40,6 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Visualize MoE expert routing (topk_idx) at nucleotide resolution.",
     )
+    parser.add_argument("--regions-bed", required=True, help="Bed file with regions to infer.")
     parser.add_argument("--config", default="fineturn_my_moe.toml", help="MoE TOML config when training.")
     parser.add_argument("--ckpt", required=True, help="Lightning checkpoint or .pth path.")
     parser.add_argument("--output-dir", required=True, help="Directory for outputs.")
@@ -168,7 +169,7 @@ def export_region_outputs(
 def main() -> None:
     args = parse_args()
     config = init_config(load_config(args.config))
-    if config.get("moe_config") is not None:
+    if config.get("moe_config_path") is not None:
         with open(config["moe_config_path"], "r") as f:
             moe_config = json.load(f)
     else:
@@ -188,7 +189,11 @@ def main() -> None:
     model.eval()
 
     # load data
-    gene_bed_path = os.path.join(config["training_data_dir"], config["gene_bed"])
+    if args.regions_bed is not None:
+        gene_bed_path = args.regions_bed
+    else:
+        print(f"Using default gene bed: {os.path.join(config['training_data_dir'], config['gene_bed'])}")
+        gene_bed_path = os.path.join(config["training_data_dir"], config["gene_bed"])
     gene_bed = pd.read_csv(
         gene_bed_path,
         sep="\t",
@@ -199,9 +204,7 @@ def main() -> None:
     infer_bed = load_Data(gene_bed, faidx, config["TSS_up"], config["TSS_down"])
     faidx.close()
 
-    if args.region_index is not None:
-        infer_bed = infer_bed.iloc[[args.region_index]].reset_index(drop=True)
-    elif args.limit_regions is not None:
+    if args.limit_regions is not None:
         infer_bed = infer_bed.iloc[: args.limit_regions].reset_index(drop=True)
 
     # build dataset and dataloader
