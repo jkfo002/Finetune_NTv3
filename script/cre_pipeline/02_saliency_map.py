@@ -98,6 +98,7 @@ def parse_args() -> argparse.Namespace:
     add_track_args(parser)
     parser.add_argument("--regions-bed", default=None, help="Optional BED regions. Defaults to config gene_bed.")
     parser.add_argument("--output-dir", default="results/saliency")
+    parser.add_argument("--strand-mode", action="store_true", help="Use strand mode to load regions.")
     parser.add_argument("--limit-regions", type=int, default=None)
     parser.add_argument(
         "--track-indices",
@@ -160,7 +161,8 @@ def main() -> None:
         print(f"Trying to load region bed from config toml {args.config['gene_bed']}")
         if args.config['gene_bed'] is None:
             raise ValueError(f"No region were detected from both {args.regions_bed} and {args.config}")
-    regions = load_regions(config, bed_path=args.regions_bed, limit=args.limit_regions)
+    regions = load_regions(config, bed_path=args.regions_bed, limit=args.limit_regions, strand_mode=args.strand_mode)
+    print(f"Loading regions from {args.regions_bed} in strand mode: {args.strand_mode}")
 
     fasta = pyfaidx.Fasta(str(config["fasta_path"]))
     gradients_chunk: List[np.ndarray] = []

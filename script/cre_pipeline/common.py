@@ -337,6 +337,7 @@ def load_regions(
     *,
     bed_path: Optional[str | Path] = None,
     limit: Optional[int] = None,
+    strand_mode: bool = False
 ) -> pd.DataFrame:
     import pyfaidx
 
@@ -347,14 +348,25 @@ def load_regions(
         if not os.path.isabs(bed_file):
             bed_file = os.path.join(str(config["training_data_dir"]), bed_file)
 
-    df = pd.read_csv(bed_file, sep="\t", header=None, names=["chrom", "start", "end", "id", "type"])
-    faidx = pyfaidx.Fasta(str(config["fasta_path"]))
     try:
-        regions = load_Data(df, faidx, int(config["TSS_up"]), int(config["TSS_down"]))
+        if strand_mode:
+            df = pd.read_csv(bed_file, sep="\t", header=None, names=["chrom", "start", "end", "id", "type", "strand"])
+        else:
+            df = pd.read_csv(bed_file, sep="\t", header=None, names=["chrom", "start", "end", "id", "type"])
+    except Exception as e:
+        print(f"Error in reading bed file: {e}")
+        raise e
+
+    faidx = pyfaidx.Fasta(str(config["fasta_path"]))
+    
+    try:
+        regions = load_Data(df, faidx, int(config["TSS_up"]), int(config["TSS_down"]), strand_mode=strand_mode)
     finally:
         faidx.close()
+
     if limit is not None:
         regions = regions.iloc[:limit].copy()
+
     return regions.reset_index(drop=True)
 
 

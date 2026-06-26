@@ -13,6 +13,7 @@ visualization/
 
 run.sh
 run2.sh
+run*sh
 volc.sh
 tensorboard.sh
 

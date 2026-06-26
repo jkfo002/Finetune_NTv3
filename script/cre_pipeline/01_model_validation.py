@@ -50,7 +50,12 @@ def spearman_np(x: np.ndarray, y: np.ndarray) -> float:
         mask = np.isfinite(x) & np.isfinite(y)
         if mask.sum() < 2:
             return float("nan")
-        return float(spearmanr(x[mask], y[mask]).correlation)
+        x_masked = x[mask]
+        y_masked = y[mask]
+        if np.std(x_masked) == 0 or np.std(y_masked) == 0:
+            return float("nan")
+        corr = spearmanr(x_masked, y_masked).correlation
+        return float(corr) if corr is not None else float("nan")
     except Exception:
         return pearson_np(pd.Series(x).rank().to_numpy(), pd.Series(y).rank().to_numpy())
 
@@ -177,6 +182,7 @@ def parse_args() -> argparse.Namespace:
     add_dataloader_args(parser)
     parser.add_argument("--regions-bed", default=None, help="Optional BED regions. Defaults to config gene_bed.")
     parser.add_argument("--output-dir", default="results/model_performance")
+    parser.add_argument("--strand-mode", action="store_true", help="Use strand mode to load regions.")
     parser.add_argument("--peak-target-percentile", type=float, default=90.0)
     parser.add_argument("--plot", action="store_true", help="Save per-region track plots.")
     parser.add_argument(
@@ -217,7 +223,8 @@ def main() -> None:
         print(f"Trying to load region bed from config toml {args.config['gene_bed']}")
         if args.config['gene_bed'] is None:
             raise ValueError(f"No region were detected from both {args.regions_bed} and {args.config}")
-    regions = load_regions(config, bed_path=args.regions_bed, limit=args.limit_regions)
+    print(f"Loading regions from {args.regions_bed} in strand mode: {args.strand_mode}")
+    regions = load_regions(config, bed_path=args.regions_bed, limit=args.limit_regions, strand_mode=args.strand_mode)
 
     # load dataloader
     dataloader = make_dataloader(

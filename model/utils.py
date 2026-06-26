@@ -76,7 +76,7 @@ def gene_filter(gene_df, faidx, TSS_region_len_up, TSS_region_len_down):
 
     return filted_gene_df
 
-def load_Data(gene_df, faidx, TSS_region_len_up, TSS_region_len_down):
+def load_Data(gene_df, faidx, TSS_region_len_up, TSS_region_len_down, strand_mode=False):
     """
     加载基因数据和h5ad文件
     :param gene_df: 基因数据框
@@ -85,8 +85,26 @@ def load_Data(gene_df, faidx, TSS_region_len_up, TSS_region_len_down):
     """
 
     filted_gene_df = gene_filter(gene_df, faidx, TSS_region_len_up, TSS_region_len_down).copy()
-    filted_gene_df['region_start'] = filted_gene_df['start'] - TSS_region_len_up
-    filted_gene_df['region_end'] = filted_gene_df['start'] + TSS_region_len_down
+    if strand_mode:
+        try:
+            def _by_strand(row):
+                strand = row["strand"]
+                if strand == "+" or strand == ".":
+                    return row["start"] - TSS_region_len_up, row["start"] + TSS_region_len_down
+                elif strand == "-":
+                    return row["end"] - TSS_region_len_down, row["end"] + TSS_region_len_up
+                else:
+                    raise ValueError(f"Invalid strand: {strand}")
+            strand_regions = filted_gene_df.apply(_by_strand, axis=1, result_type="expand")
+            strand_regions.columns = ["region_start", "region_end"]
+            filted_gene_df[["region_start", "region_end"]] = strand_regions
+        except Exception as e:
+            print(f"Error in _by_strand: {e}")
+            raise e
+    else:
+        filted_gene_df['region_start'] = filted_gene_df['start'] - TSS_region_len_up
+        filted_gene_df['region_end'] = filted_gene_df['start'] + TSS_region_len_down
+        
     print("before drop duplicates: ", filted_gene_df.shape)
     filted_gene_df = filted_gene_df.drop_duplicates(subset=['region_start', 'region_end'])
     print("after drop duplicates: ", filted_gene_df.shape)

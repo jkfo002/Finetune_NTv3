@@ -150,7 +150,7 @@ class GenomeBigWigDataset(Dataset):
 
     def __getitem__(self, idx):
         # Sample a random region from the valid regions
-        chrom, start, end, _, _, region_start, region_end = self.chrom_regions.iloc[idx]
+        chrom, start, end, region_start, region_end = self.chrom_regions.iloc[idx][['chrom', 'start', 'end', 'region_start', 'region_end']]
         # Sequence - get FASTA handle lazily (cached per worker process)
         fasta = _get_fasta_handle(self.fasta_path)
         seq = fasta[chrom][region_start - 1 : region_end - 1]  # string slice
